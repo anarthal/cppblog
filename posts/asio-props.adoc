@@ -1,4 +1,6 @@
 # Boost.Asio properties
+:source-highlighter: highlightjs
+Rubén Pérez (@anarthal)
 
 If you're a high-end Asio user, you know that Asio docs are usually "terse".
 You may have read statements like "Calls `require(ex, execution::blocking.never).execute(...)`".
@@ -26,7 +28,7 @@ As you may know, these functions are the preferred way to submit
 functions to an executor. In their simplest form, they take a nullary completion
 token as argument:
 
-[code,cpp]
+[source,cpp]
 ----
 void f() {
     printf("I'm a function\n");
@@ -47,7 +49,7 @@ difer on how `f` is scheduled, all of them provide this guarantee.
 
 Does this code compile?
 
-[code,cpp]
+[source,cpp]
 ----
 void f() {
     printf("I'm a function\n");
@@ -74,7 +76,7 @@ so let's focus on the other two.
 Let's stay concrete and stick to `io_context`. When invoked from a thread that is **not**
 calling `io_context::run()`, they both queue the submitted function for execution:
 
-[code,cpp]
+[source,cpp]
 ----
 void f() {
     printf("I'm a function\n");
@@ -98,7 +100,7 @@ When called from a thread that is calling `run()`, `post()` will queue the
 function (as in the previous case), but `dispatch()` will run the function
 immediately, before `dispatch()` returns:
 
-[code,cpp]
+[source,cpp]
 ----
 
 void f() { printf("Function f\n"); }
@@ -183,7 +185,7 @@ This is a complex, extensible system that can represent much more than flags.
 To set a property of an executor, call `asio::require(ex, prop)`, which returns
 a new executor with `prop` set. For instance:
 
-[code,cpp]
+[source,cpp]
 ----
 void f() { printf("Function f\n"); }
 void g() { printf("Function g\n"); }
@@ -296,7 +298,7 @@ When the counter reaches zero, `io_context::run` returns.
 
 For instance:
 
-[code,cpp]
+[source,cpp]
 ----
 int main()
 {
@@ -328,7 +330,7 @@ decrement it when destructed.
 
 For instance:
 
-[code,cpp]
+[source,cpp]
 ----
 void f() { printf("Function f\n"); }
 
@@ -361,7 +363,7 @@ good to know about it. It's also used internally by async operations
 to keep work active on executors bound to completion tokens.
 For instance:
 
-[code,cpp]
+[source,cpp]
 ----
 int main()
 {
