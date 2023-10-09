@@ -1,0 +1,401 @@
+# Boost.Asio properties
+
+If you're a high-end Asio user, you know that Asio docs are usually "terse".
+You may have read statements like "Calls `require(ex, execution::blocking.never).execute(...)`".
+If you navigate to the `execution::blocking.never`, you may find generic sentences like
+"A sub-property that indicates that invocation of an executor's execution function shall not block [...]".
+
+I've experimented this a lot of times, so I've decided to put all the
+knowledge I've been acquiring together in a single post. This article is
+geared towards Asio high-end users and library writers (we won't be covering
+what an `io_context` is).
+
+## Executor vs. execution context refresher
+
+You probably already know this, but let's refresh. An execution context
+is a heavyweight object containing the means to execute code.
+`asio::io_context` and `asio::thread_pool` are examples of this.
+
+On the other hand, executors are cheap-to-copy handles to execution
+contexts. They are the preferred way to submit work to execution contexts.
+Executors are the subject of our discussion, since properties apply to them.
+
+## Submitting a function to an executor: dispatch(), post() and defer()
+
+As you may know, these functions are the preferred way to submit
+functions to an executor. In their simplest form, they take a nullary completion
+token as argument:
+
+[code,cpp]
+----
+void f() {
+    printf("I'm a function\n");
+}
+
+int main() {
+    asio::io_context ctx;
+    asio::dispatch(asio::bind_executor(ctx.get_executor(), f));
+    ctx.run();
+}
+----
+
+Any of these three functions guarantee that `f` will be executed
+**on the executor associated to `f`**. While the three functions
+difer on how `f` is scheduled, all of them provide this guarantee.
+
+## The default associated executor is the `system_executor`
+
+Does this code compile?
+
+[code,cpp]
+----
+void f() {
+    printf("I'm a function\n");
+}
+
+int main() {
+    asio::dispatch(f);
+}
+----
+
+We're submitting `f` for execution, but `f` doesn't have an associated executor.
+
+It does build, and `f` will get executed. That's because if an object doesn't have
+an associated executor, the system executor (`asio::system_executor`) is used.
+The system executor doesn't provide guarantees on which thread your function
+will be run on, so this must be used with caution to avoid data races.
+
+[#post_dispatch]
+## The difference between post() and dispatch()
+
+Many other blog posts talk about this, so let's be brief. `defer()` is almost never used,
+so let's focus on the other two.
+
+Let's stay concrete and stick to `io_context`. When invoked from a thread that is **not**
+calling `io_context::run()`, they both queue the submitted function for execution:
+
+[code,cpp]
+----
+void f() {
+    printf("I'm a function\n");
+}
+
+int main() {
+    asio::io_context ctx;
+
+    // Doesn't call f immediately, queues it
+    asio::dispatch(asio::bind_executor(ctx.get_executor(), f));
+
+    // Doesn't call f immediately, queues it too
+    asio::post(asio::bind_executor(ctx.get_executor(), f));
+
+    // Executes f twice
+    ctx.run();
+}
+----
+
+When called from a thread that is calling `run()`, `post()` will queue the
+function (as in the previous case), but `dispatch()` will run the function
+immediately, before `dispatch()` returns:
+
+[code,cpp]
+----
+
+void f() { printf("Function f\n"); }
+void g() { printf("Function g\n"); }
+
+int main()
+{
+    asio::io_context ctx;
+    auto ex = ctx.get_executor();
+
+    // Submit the lambda for execution. Invoked as part of run()
+    asio::post(asio::bind_executor(ex, [ex] {
+        printf("Lambda entry\n");
+
+        // Since this lambda is running from a thread calling run(),
+        // if will be invoked immediately, as part of the dispatch call
+        asio::dispatch(asio::bind_executor(ex, f));
+
+        // However, g will not be executed as part of the lambda. It will be queued
+        // and run after the lambda returns
+        asio::post(asio::bind_executor(ex, g));
+
+        printf("Lambda exit\n");
+    }));
+
+    ctx.run();
+}
+
+// Prints:
+//   Lambda entry
+//   Function f
+//   Lambda exit
+//   Function g
+----
+
+Both `post()` and `dispatch()` guarantee that the passed function is run
+as dictated by the rules of its associated executor. `post()` is usually slower
+than `dispatch()` due to the additional queueing guarantees it provides.
+`post()` is usually employed to prevent stack overflow in async chains that may
+complete immediately. I will expand on this in a later post.
+
+## Networking TS executors vs. proposed standard executors
+
+You may have come accross these terms when reading Asio docs. If you consult
+`io_context::executor` docs, you will encounter the following member functions:
+
+* `post()`, `dispatch()`, `defer()`, `on_work_started()` and `on_work_finished()`.
+  Executors with these functions fulfill the requirements of networking TS executors.
+  This is an older, simpler model.
+* `execute()`, `query()` and `require()`. These functions implement the proposed standard executors,
+  though a newer, more complex system of properties.
+
+Both models co-exist in Asio. Some functions and classes work only with standard executors
+(e.g. `any_io_executor`), while others work with both. In general, Asio prefers using
+the standard executor model vs. the networking TS model, if both are available.
+
+Note that we've been calling the `asio::post()` standalone function, **not the `io_context::post()`
+member function**. Actually, `asio::post()` **will not call `io_context::post()`** as part
+of its implementation - we'll delve deeper in further sections.
+
+## The property system
+
+So how are `asio::post()` and `asio::dispatch()` implemented? They use
+the new property system.
+
+Recall that executors are lightweight handles to execution contexts.
+In our case, `io_context` is an execution context, while `io_context::executor`
+is a lightweight, cheap-to-copy handle that allows submitting work to the underlying
+`io_context`.
+
+Under this new system, executors implement a single function, `execute()`. Like
+the old `post()` and `dispatch()` member functions, it accepts a function without
+arguments, which will be submitted for execution.
+
+`io_context::executor` stores internally some flags that dictate what "executing a function"
+means. For instance, one of the flags enables executing the passed function as part of `execute()`.
+If the flag is set, `execute()` behaves like `dispatch()`, otherwise, it behaves like a `post()`.
+
+The flags I've been talking about are exposed to the user as properties of an executor.
+This is a complex, extensible system that can represent much more than flags.
+
+To set a property of an executor, call `asio::require(ex, prop)`, which returns
+a new executor with `prop` set. For instance:
+
+[code,cpp]
+----
+void f() { printf("Function f\n"); }
+void g() { printf("Function g\n"); }
+
+int main()
+{
+    asio::io_context ctx;
+    auto ex = ctx.get_executor();
+
+    // Submit the lambda for execution. Invoked as part of run()
+    asio::post(asio::bind_executor(ex, [ex] {
+        printf("Lambda entry\n");
+
+        // Executes f through ex. If no property is set, execute()
+        // behaves like dispatch(), so f will be run immediately, as part of execute()
+        ex.execute(f);
+
+        // Create a copy of ex, setting the blocking property to never.
+        // This will make execute() behave like post()
+        auto ex2 = asio::require(ex, asio::execution::blocking.never);
+
+        // g will not be executed as part of the lambda. It will be queued
+        // and run after the lambda returns
+        ex2.execute(g);
+
+        printf("Lambda exit\n");
+    }));
+
+    // Executes f twice
+    ctx.run();
+}
+
+// Prints:
+//   Lambda entry
+//   Function f
+//   Lambda exit
+//   Function g
+----
+
+`asio::prefer(ex, prop)` behaves similarly to `require`, but does not guarantee
+that the returned executor will have the property set (it just indicates a preference).
+`asio::query(ex, prop)` retrieves the value of a property.
+
+There is **a lot** of template machinery behind this system to allow for customization
+points and type-safety. For instance, `asio::require(ctx.get_executor(), asio::execution::mapping.new_thread)`
+(which asks the executor to launch every passed function into its own new thread)
+will fail to compile, since `io_context` can't satisfy this. Error messages can be cryptic, though.
+
+## The `blocking` property
+
+As we've seen before, this property controls whether the function passed to `execute()`
+can be run immediately, as part of `execute()`, or must be queued for later execution.
+Possible values are:
+
+* `asio::execution::blocking.never`: never run the function as part of `execute()`.
+  This is what `asio::post()` does.
+* `asio::execution::blocking.possibly`: the function may or may not be run as part of `execute()`.
+  This is the default (what you get when calling `io_context::get_executor`).
+* `asio::execution::blocking.always`: the function is always run as part of `execute()`.
+  This is not supported by `io_context::executor`.
+
+## The `relationship` property
+
+`relationship` can take two values:
+
+* `asio::execution::relationship.continuation`: indicates that the function passed to `execute()`
+  is a continuation of the function calling `execute()`.
+* `asio::execution::relationship.fork`: the opposite of the above. This is the default
+  (what you get when calling `io_context::get_executor()`).
+
+Setting this property to `continuation` enables some optimizations
+in how the function gets scheduled. It only has effect if the function
+is queued (as opposed to run immediately). For `io_context`, when set, the function
+is scheduled to run in a faster, thread-local queue, rather than the context-global one.
+
+## Understanding `asio::dispatch` and `asio::post` docs
+
+Armed with this knowledge, we are ready to understand https://www.boost.org/doc/libs/master/doc/html/boost_asio/reference/post/overload1.html[Asio's docs on `post`]. In essence, `post(f)`:
+
+* Obtains the executor associated to `f`. Recall that this is `system_executor` by default.
+* Sets the `asio::execution::blocking.never` property by calling `require`. This guarantees
+  that `f` won't be ever run inline, even if called from a `io_context` thread.
+* Attempts to set `asio::execution::relationship.fork` property by using `prefer`,
+  disabling any optimization related to continuation.
+* Attempts to set the `asio::execution::allocator` property. We haven't seen this
+  property, but it's a way to customize memory allocations that the executor may need to perform.
+* Calls `execute()` on the resulting executor.
+
+Note that this only happens if `execution::is_executor<Ex>::value` is `true`.
+This type trait tests whether `Ex` is a "proposed standard executor" (vs a "networking TS executor").
+Otherwise, it attempts to call `Ex::post`.
+
+On the other hand, https://www.boost.org/doc/libs/master/doc/html/boost_asio/reference/dispatch/overload1.html[`dispatch(f)`]:
+
+* Obtains the executor associated to `f`.
+* Attempts to set the `asio::execution::allocator` property.
+* Calls `execute()` on the resulting executor.
+
+That is, `asio::dispatch` is almost equivalent to calling `execute()` directly.
+When used with the executor returned by `io_context::get_executor()`, this will
+behave like we described xref:post_dispatch[above].
+
+## Work tracking
+
+The `asio::execution::outstanding_work` property is related to work tracking.
+For an `io_context`, "work tracking" refers to an internal counter that controls
+when `io_context::run` returns. The counter starts at zero, is incremented
+when asynchronous operations are started, and decremented again when they complete.
+When the counter reaches zero, `io_context::run` returns.
+
+For instance:
+
+[code,cpp]
+----
+int main()
+{
+    // The work counter starts at zero.
+    // If we called run() now, it would return immediately.
+    asio::io_context ctx;
+
+    // Create an I/O object. Counter is still zero.
+    asio::steady_timer tim{ctx.get_executor()};
+
+    // Schedule an async operation. The counter is incremented.
+    tim.expires_after(std::chrono::seconds(2));
+    tim.async_wait([](error_code) {
+        // When the operation completes, the counter is decremented.
+        printf("Timer finished");
+    });
+
+    // Run the context. Work tracking guarantees that run() won't return
+    // until the timer has expired and all the handlers have run
+    ctx.run();
+}
+----
+
+While counter management usually happens automatically, it can be triggered
+manually using the `asio::execution::outstanding_work` property.
+When set to `asio::execution::outstanding_work.tracked`, executors behave like
+a RAII-style resource which increment the work counter when constructed, and
+decrement it when destructed.
+
+For instance:
+
+[code,cpp]
+----
+void f() { printf("Function f\n"); }
+
+int main()
+{
+    asio::io_context ctx;
+
+    // Spawn a thread that has nothing to do with the io_context, that sleeps
+    // for some time and then dispatches a callback to the io_context.
+    // This simulates an external event source.
+    // When ex is created, the work counter is incremented.
+    std::jthread t{[ex = asio::require(ctx.get_executor(), asio::execution::outstanding_work.tracked)] {
+        // Sleep
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+
+        // Submit the function for execution. By moving the executor,
+        // we guarantee that the work counter is decremented when the work is done
+        // (think of ex like a smart pointer).
+        asio::dispatch(asio::bind_executor(std::move(ex), f));
+    }};
+
+    // Without the require statement, run() would return before the asio::dispatch
+    // call is made, and f wouldn't be called.
+    ctx.run();
+}
+----
+
+This mechanism is used by functions like `async_compose`, so it's
+good to know about it. It's also used internally by async operations
+to keep work active on executors bound to completion tokens.
+For instance:
+
+[code,cpp]
+----
+int main()
+{
+    // I/O context running the completions
+    asio::io_context ctx;
+
+    // A thread pool of one thread, that will run timers.
+    // Note that thread_pool is run internally, by its own threads,
+    // we don't need to explicitly call run()
+    asio::thread_pool pool{1};
+
+    // Create the timer
+    asio::steady_timer tim{pool.get_executor()};
+
+    // Launch the timer wait. Since the completion token
+    // we're passing to async_wait has an associated executor,
+    // Asio will maintain active work for this executor until
+    // the lambda is called. This uses the property system, as the example above.
+    tim.expires_after(std::chrono::seconds(2));
+    tim.async_wait(
+        asio::bind_executor(
+            ctx.get_executor(),
+            [](error_code ec) { printf("timer expired\n"); }
+        )
+    );
+
+    // Run the I/O context. 
+    ctx.run();
+}
+----
+
+## Conclusion
+
+Executor properties are not _that_ hard once you understand them. Sooner or later,
+you end up having to write a test that involves a custom executor, or get an
+unintelligible compile error about something not confirming to the `executor` concept.
+When this happens, knowing how this all works will definitely help.
