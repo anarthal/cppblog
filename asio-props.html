@@ -439,11 +439,30 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.18.3/styles/github.min.css">
 </head>
-<body class="article">
+<body class="article toc2 toc-left">
 <div id="header">
 <h1>Boost.Asio properties</h1>
 <div class="details">
 <span id="author" class="author">Rubén Pérez (@anarthal)</span><br>
+</div>
+<div id="toc" class="toc2">
+<div id="toctitle">Table of Contents</div>
+<ul class="sectlevel1">
+<li><a href="#_executor_vs_execution_context_refresher">Executor vs. execution context refresher</a></li>
+<li><a href="#_submitting_a_function_to_an_executor_dispatch_post_and_defer">Submitting a function to an executor: dispatch(), post() and defer()</a></li>
+<li><a href="#_the_default_associated_executor_is_the_system_executor">The default associated executor is the <code>system_executor</code></a></li>
+<li><a href="#post_dispatch">The difference between post() and dispatch()</a></li>
+<li><a href="#_networking_ts_executors_vs_proposed_standard_executors">Networking TS executors vs. proposed standard executors</a></li>
+<li><a href="#_the_property_system">The property system</a>
+<ul class="sectlevel2">
+<li><a href="#_the_blocking_property">The <code>blocking</code> property</a></li>
+<li><a href="#_the_relationship_property">The <code>relationship</code> property</a></li>
+<li><a href="#_understanding_asiodispatch_and_asiopost_docs">Understanding <code>asio::dispatch</code> and <code>asio::post</code> docs</a></li>
+</ul>
+</li>
+<li><a href="#_work_tracking">Work tracking</a></li>
+<li><a href="#_conclusion">Conclusion</a></li>
+</ul>
 </div>
 </div>
 <div id="content">
@@ -451,8 +470,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div class="sectionbody">
 <div class="paragraph">
 <p>If you&#8217;re a high-end Asio user, you know that Asio docs are usually "terse".
-You may have read statements like "Calls <code>require(ex, execution::blocking.never).execute(&#8230;&#8203;)`".
-If you navigate to the `execution::blocking.never</code>, you may find generic sentences like
+You may have read statements like "calls <code>require(ex, execution::blocking.never).execute(&#8230;&#8203;)</code> ".
+If you navigate to the <code>execution::blocking.never</code>, you may find generic sentences like
 "A sub-property that indicates that invocation of an executor&#8217;s execution function shall not block [&#8230;&#8203;]".</p>
 </div>
 <div class="paragraph">
@@ -606,6 +625,14 @@ int main()
 </div>
 </div>
 <div class="paragraph">
+<p>The following diagram shows how these call chains work:</p>
+</div>
+<div class="imageblock">
+<div class="content">
+<img src="asio-props.svg" alt="asio props">
+</div>
+</div>
+<div class="paragraph">
 <p>Both <code>post()</code> and <code>dispatch()</code> guarantee that the passed function is run
 as dictated by the rules of its associated executor. <code>post()</code> is usually slower
 than <code>dispatch()</code> due to the additional queueing guarantees it provides.
@@ -728,11 +755,8 @@ points and type-safety. For instance, <code>asio::require(ctx.get_executor(), as
 (which asks the executor to launch every passed function into its own new thread)
 will fail to compile, since <code>io_context</code> can&#8217;t satisfy this. Error messages can be cryptic, though.</p>
 </div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_the_blocking_property">The <code>blocking</code> property</h2>
-<div class="sectionbody">
+<div class="sect2">
+<h3 id="_the_blocking_property">The <code>blocking</code> property</h3>
 <div class="paragraph">
 <p>As we&#8217;ve seen before, this property controls whether the function passed to <code>execute()</code>
 can be run immediately, as part of <code>execute()</code>, or must be queued for later execution.
@@ -755,10 +779,8 @@ This is not supported by <code>io_context::executor</code>.</p>
 </ul>
 </div>
 </div>
-</div>
-<div class="sect1">
-<h2 id="_the_relationship_property">The <code>relationship</code> property</h2>
-<div class="sectionbody">
+<div class="sect2">
+<h3 id="_the_relationship_property">The <code>relationship</code> property</h3>
 <div class="paragraph">
 <p><code>relationship</code> can take two values:</p>
 </div>
@@ -781,10 +803,8 @@ is queued (as opposed to run immediately). For <code>io_context</code>, when set
 is scheduled to run in a faster, thread-local queue, rather than the context-global one.</p>
 </div>
 </div>
-</div>
-<div class="sect1">
-<h2 id="_understanding_asiodispatch_and_asiopost_docs">Understanding <code>asio::dispatch</code> and <code>asio::post</code> docs</h2>
-<div class="sectionbody">
+<div class="sect2">
+<h3 id="_understanding_asiodispatch_and_asiopost_docs">Understanding <code>asio::dispatch</code> and <code>asio::post</code> docs</h3>
 <div class="paragraph">
 <p>Armed with this knowledge, we are ready to understand <a href="https://www.boost.org/doc/libs/master/doc/html/boost_asio/reference/post/overload1.html">Asio&#8217;s docs on <code>post</code></a>. In essence, <code>post(f)</code>:</p>
 </div>
@@ -835,6 +855,7 @@ Otherwise, it attempts to call <code>Ex::post</code>.</p>
 <p>That is, <code>asio::dispatch</code> is almost equivalent to calling <code>execute()</code> directly.
 When used with the executor returned by <code>io_context::get_executor()</code>, this will
 behave like we described <a href="#post_dispatch">above</a>.</p>
+</div>
 </div>
 </div>
 </div>
@@ -967,7 +988,7 @@ When this happens, knowing how this all works will definitely help.</p>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2023-10-09 22:00:25 UTC
+Last updated 2023-10-15 13:05:29 UTC
 </div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.18.3/highlight.min.js"></script>
