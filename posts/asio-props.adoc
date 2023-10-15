@@ -1,9 +1,10 @@
 # Boost.Asio properties
 :source-highlighter: highlightjs
+:toc: left
 Rubén Pérez (@anarthal)
 
 If you're a high-end Asio user, you know that Asio docs are usually "terse".
-You may have read statements like "Calls `require(ex, execution::blocking.never).execute(...)`".
+You may have read statements like "calls `require(ex, execution::blocking.never).execute(...)` ".
 If you navigate to the `execution::blocking.never`, you may find generic sentences like
 "A sub-property that indicates that invocation of an executor's execution function shall not block [...]".
 
@@ -136,6 +137,10 @@ int main()
 //   Function g
 ----
 
+The following diagram shows how these call chains work:
+
+image::asio-props.svg[]
+
 Both `post()` and `dispatch()` guarantee that the passed function is run
 as dictated by the rules of its associated executor. `post()` is usually slower
 than `dispatch()` due to the additional queueing guarantees it provides.
@@ -234,7 +239,7 @@ points and type-safety. For instance, `asio::require(ctx.get_executor(), asio::e
 (which asks the executor to launch every passed function into its own new thread)
 will fail to compile, since `io_context` can't satisfy this. Error messages can be cryptic, though.
 
-## The `blocking` property
+### The `blocking` property
 
 As we've seen before, this property controls whether the function passed to `execute()`
 can be run immediately, as part of `execute()`, or must be queued for later execution.
@@ -247,7 +252,7 @@ Possible values are:
 * `asio::execution::blocking.always`: the function is always run as part of `execute()`.
   This is not supported by `io_context::executor`.
 
-## The `relationship` property
+### The `relationship` property
 
 `relationship` can take two values:
 
@@ -261,7 +266,7 @@ in how the function gets scheduled. It only has effect if the function
 is queued (as opposed to run immediately). For `io_context`, when set, the function
 is scheduled to run in a faster, thread-local queue, rather than the context-global one.
 
-## Understanding `asio::dispatch` and `asio::post` docs
+### Understanding `asio::dispatch` and `asio::post` docs
 
 Armed with this knowledge, we are ready to understand https://www.boost.org/doc/libs/master/doc/html/boost_asio/reference/post/overload1.html[Asio's docs on `post`]. In essence, `post(f)`:
 
