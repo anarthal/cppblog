@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="generator" content="Asciidoctor 2.0.16">
 <meta name="author" content="Rubén Pérez (@anarthal)">
-<title>Boost.Asio properties</title>
+<title>C++20 modules and Boost: an analysis</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700">
 <style>
 /*! Asciidoctor default stylesheet | MIT License | https://asciidoctor.org */
@@ -441,27 +441,18 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </head>
 <body class="article toc2 toc-left">
 <div id="header">
-<h1>Boost.Asio properties</h1>
+<h1>C++20 modules and Boost: an analysis</h1>
 <div class="details">
 <span id="author" class="author">Rubén Pérez (@anarthal)</span><br>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
 <ul class="sectlevel1">
-<li><a href="#_executor_vs_execution_context_refresher">Executor vs. execution context refresher</a></li>
-<li><a href="#_submitting_a_function_to_an_executor_dispatch_post_and_defer">Submitting a function to an executor: dispatch(), post() and defer()</a></li>
-<li><a href="#_the_default_associated_executor_is_the_system_executor">The default associated executor is the <code>system_executor</code></a></li>
-<li><a href="#post_dispatch">The difference between post() and dispatch()</a></li>
-<li><a href="#_networking_ts_executors_vs_proposed_standard_executors">Networking TS executors vs. proposed standard executors</a></li>
-<li><a href="#_the_property_system">The property system</a>
-<ul class="sectlevel2">
-<li><a href="#_the_blocking_property">The <code>blocking</code> property</a></li>
-<li><a href="#_the_relationship_property">The <code>relationship</code> property</a></li>
-<li><a href="#_understanding_asiodispatch_and_asiopost_docs">Understanding <code>asio::dispatch</code> and <code>asio::post</code> docs</a></li>
-</ul>
-</li>
-<li><a href="#_work_tracking">Work tracking</a></li>
-<li><a href="#_conclusion">Conclusion</a></li>
+<li><a href="#_a_mental_model_for_modules">A mental model for modules</a></li>
+<li><a href="#_compiler_and_tooling_support">Compiler and tooling support</a></li>
+<li><a href="#_how_to_modularize_a_library">How to modularize a library</a></li>
+<li><a href="#_measuring_build_time_benefits">Measuring build-time benefits</a></li>
+<li><a href="#_consuming_boost_using_modules">Consuming Boost using modules</a></li>
 </ul>
 </div>
 </div>
@@ -469,519 +460,278 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div id="preamble">
 <div class="sectionbody">
 <div class="paragraph">
-<p>If you&#8217;re a high-end Asio user, you know that Asio docs are usually "terse".
-You may have read statements like "calls <code>require(ex, execution::blocking.never).execute(&#8230;&#8203;)</code> ".
-If you navigate to the <code>execution::blocking.never</code>, you may find generic sentences like
-"A sub-property that indicates that invocation of an executor&#8217;s execution function shall not block [&#8230;&#8203;]".</p>
+<p>This document contains my findings when playing with C++20 modules and the possibility of a modular Boost. The analysis is oriented towards analyzing the costs and benefits of building a distributing existing Boost libraries as C++20 modules, so that users can write <code>import boost</code> in their code. The analysis focuses on header-only libraries.</p>
 </div>
 <div class="paragraph">
-<p>I&#8217;ve experimented this a lot of times, so I&#8217;ve decided to put all the
-knowledge I&#8217;ve been acquiring together in a single post. This article is
-geared towards Asio high-end users and library writers (we won&#8217;t be covering
-what an <code>io_context</code> is).</p>
+<p>The experiment is available in <a href="https://github.com/anarthal/boost-modules-bench">this repository</a>.</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_executor_vs_execution_context_refresher">Executor vs. execution context refresher</h2>
+<h2 id="_a_mental_model_for_modules">A mental model for modules</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>You probably already know this, but let&#8217;s refresh. An execution context
-is a heavyweight object containing the means to execute code.
-<code>asio::io_context</code> and <code>asio::thread_pool</code> are examples of this.</p>
+<p>Quick recap: modules are a C++20 language-level construct that aims to provide better encapsulation and reduce build times. Modules add a new translation unit type: module units. Modules are built into a binary artifact called BMI.</p>
 </div>
 <div class="paragraph">
-<p>On the other hand, executors are cheap-to-copy handles to execution
-contexts. They are the preferred way to submit work to execution contexts.
-Executors are the subject of our discussion, since properties apply to them.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_submitting_a_function_to_an_executor_dispatch_post_and_defer">Submitting a function to an executor: dispatch(), post() and defer()</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>As you may know, these functions are the preferred way to submit
-functions to an executor. In their simplest form, they take a nullary completion
-token as argument:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">void f() {
-    printf("I'm a function\n");
-}
-
-int main() {
-    asio::io_context ctx;
-    asio::dispatch(asio::bind_executor(ctx.get_executor(), f));
-    ctx.run();
-}</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>Any of these three functions guarantee that <code>f</code> will be executed
-<strong>on the executor associated to <code>f</code></strong>. While the three functions
-difer on how <code>f</code> is scheduled, all of them provide this guarantee.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_the_default_associated_executor_is_the_system_executor">The default associated executor is the <code>system_executor</code></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Does this code compile?</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">void f() {
-    printf("I'm a function\n");
-}
-
-int main() {
-    asio::dispatch(f);
-}</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>We&#8217;re submitting <code>f</code> for execution, but <code>f</code> doesn&#8217;t have an associated executor.</p>
-</div>
-<div class="paragraph">
-<p>It does build, and <code>f</code> will get executed. That&#8217;s because if an object doesn&#8217;t have
-an associated executor, the system executor (<code>asio::system_executor</code>) is used.
-The system executor doesn&#8217;t provide guarantees on which thread your function
-will be run on, so this must be used with caution to avoid data races.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="post_dispatch">The difference between post() and dispatch()</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Many other blog posts talk about this, so let&#8217;s be brief. <code>defer()</code> is almost never used,
-so let&#8217;s focus on the other two.</p>
-</div>
-<div class="paragraph">
-<p>Let&#8217;s stay concrete and stick to <code>io_context</code>. When invoked from a thread that is <strong>not</strong>
-calling <code>io_context::run()</code>, they both queue the submitted function for execution:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">void f() {
-    printf("I'm a function\n");
-}
-
-int main() {
-    asio::io_context ctx;
-
-    // Doesn't call f immediately, queues it
-    asio::dispatch(asio::bind_executor(ctx.get_executor(), f));
-
-    // Doesn't call f immediately, queues it too
-    asio::post(asio::bind_executor(ctx.get_executor(), f));
-
-    // Executes f twice
-    ctx.run();
-}</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>When called from a thread that is calling <code>run()</code>, <code>post()</code> will queue the
-function (as in the previous case), but <code>dispatch()</code> will run the function
-immediately, before <code>dispatch()</code> returns:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">void f() { printf("Function f\n"); }
-void g() { printf("Function g\n"); }
-
-int main()
-{
-    asio::io_context ctx;
-    auto ex = ctx.get_executor();
-
-    // Submit the lambda for execution. Invoked as part of run()
-    asio::post(asio::bind_executor(ex, [ex] {
-        printf("Lambda entry\n");
-
-        // Since this lambda is running from a thread calling run(),
-        // if will be invoked immediately, as part of the dispatch call
-        asio::dispatch(asio::bind_executor(ex, f));
-
-        // However, g will not be executed as part of the lambda. It will be queued
-        // and run after the lambda returns
-        asio::post(asio::bind_executor(ex, g));
-
-        printf("Lambda exit\n");
-    }));
-
-    ctx.run();
-}
-
-// Prints:
-//   Lambda entry
-//   Function f
-//   Lambda exit
-//   Function g</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>The following diagram shows how these call chains work:</p>
-</div>
-<div class="imageblock">
-<div class="content">
-<img src="asio-props.svg" alt="asio props">
-</div>
-</div>
-<div class="paragraph">
-<p>Both <code>post()</code> and <code>dispatch()</code> guarantee that the passed function is run
-as dictated by the rules of its associated executor. <code>post()</code> is usually slower
-than <code>dispatch()</code> due to the additional queueing guarantees it provides.
-<code>post()</code> is usually employed to prevent stack overflow in async chains that may
-complete immediately. I will expand on this in a later post.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_networking_ts_executors_vs_proposed_standard_executors">Networking TS executors vs. proposed standard executors</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>You may have come accross these terms when reading Asio docs. If you consult
-<code>io_context::executor</code> docs, you will encounter the following member functions:</p>
+<p>In our context, as an overly simplification, we can think of them as "well behaved precompiled headers", with the following differences:</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p><code>post()</code>, <code>dispatch()</code>, <code>defer()</code>, <code>on_work_started()</code> and <code>on_work_finished()</code>.
-Executors with these functions fulfill the requirements of networking TS executors.
-This is an older, simpler model.</p>
+<p>You can import as many modules as you want, while you can only include one precompiled header.</p>
 </li>
 <li>
-<p><code>execute()</code>, <code>query()</code> and <code>require()</code>. These functions implement the proposed standard executors,
-though a newer, more complex system of properties.</p>
+<p>Declarations are not exported from modules by default - <code>export</code> needs to be used on the declarations to be exported.</p>
+</li>
+<li>
+<p>Macros can&#8217;t be exported from modules.</p>
 </li>
 </ul>
 </div>
 <div class="paragraph">
-<p>Both models co-exist in Asio. Some functions and classes work only with standard executors
-(e.g. <code>any_io_executor</code>), while others work with both. In general, Asio prefers using
-the standard executor model vs. the networking TS model, if both are available.</p>
+<p>Like PCHs, BMIs are highly non-portable and must be built by the library user (and not by us), and need some cooperation from the build system. For header-only libraries, this is <strong>the user&#8217;s build system</strong> (e.g. CMake), not the one we use (b2).</p>
 </div>
 <div class="paragraph">
-<p>Note that we&#8217;ve been calling the <code>asio::post()</code> standalone function, <strong>not the <code>io_context::post()</code>
-member function</strong>. Actually, <code>asio::post()</code> <strong>will not call <code>io_context::post()</code></strong> as part
-of its implementation - we&#8217;ll delve deeper in further sections.</p>
+<p>For each <code>import</code> the user places in their TU, the compiler needs a corresponding BMI. This introduces a build-time dependency (like precompiled headers do). The build system needs to scan TUs for imports to build the dependency graph.</p>
+</div>
+<div class="paragraph">
+<p>Header units (<code>import &lt;boost/asio.hpp&gt;;</code>) are supposed to be an intermediate between headers and modules. I haven&#8217;t explored them because they don&#8217;t have CMake support, and are supposedly slower.</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_the_property_system">The property system</h2>
+<h2 id="_compiler_and_tooling_support">Compiler and tooling support</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>So how are <code>asio::post()</code> and <code>asio::dispatch()</code> implemented? They use
-the new property system.</p>
-</div>
-<div class="paragraph">
-<p>Recall that executors are lightweight handles to execution contexts.
-In our case, <code>io_context</code> is an execution context, while <code>io_context::executor</code>
-is a lightweight, cheap-to-copy handle that allows submitting work to the underlying
-<code>io_context</code>.</p>
-</div>
-<div class="paragraph">
-<p>Under this new system, executors implement a single function, <code>execute()</code>. Like
-the old <code>post()</code> and <code>dispatch()</code> member functions, it accepts a function without
-arguments, which will be submitted for execution.</p>
-</div>
-<div class="paragraph">
-<p><code>io_context::executor</code> stores internally some flags that dictate what "executing a function"
-means. For instance, one of the flags enables executing the passed function as part of <code>execute()</code>.
-If the flag is set, <code>execute()</code> behaves like <code>dispatch()</code>, otherwise, it behaves like a <code>post()</code>.</p>
-</div>
-<div class="paragraph">
-<p>The flags I&#8217;ve been talking about are exposed to the user as properties of an executor.
-This is a complex, extensible system that can represent much more than flags.</p>
-</div>
-<div class="paragraph">
-<p>To set a property of an executor, call <code>asio::require(ex, prop)</code>, which returns
-a new executor with <code>prop</code> set. For instance:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">void f() { printf("Function f\n"); }
-void g() { printf("Function g\n"); }
-
-int main()
-{
-    asio::io_context ctx;
-    auto ex = ctx.get_executor();
-
-    // Submit the lambda for execution. Invoked as part of run()
-    asio::post(asio::bind_executor(ex, [ex] {
-        printf("Lambda entry\n");
-
-        // Executes f through ex. If no property is set, execute()
-        // behaves like dispatch(), so f will be run immediately, as part of execute()
-        ex.execute(f);
-
-        // Create a copy of ex, setting the blocking property to never.
-        // This will make execute() behave like post()
-        auto ex2 = asio::require(ex, asio::execution::blocking.never);
-
-        // g will not be executed as part of the lambda. It will be queued
-        // and run after the lambda returns
-        ex2.execute(g);
-
-        printf("Lambda exit\n");
-    }));
-
-    // Executes f twice
-    ctx.run();
-}
-
-// Prints:
-//   Lambda entry
-//   Function f
-//   Lambda exit
-//   Function g</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p><code>asio::prefer(ex, prop)</code> behaves similarly to <code>require</code>, but does not guarantee
-that the returned executor will have the property set (it just indicates a preference).
-<code>asio::query(ex, prop)</code> retrieves the value of a property.</p>
-</div>
-<div class="paragraph">
-<p>There is <strong>a lot</strong> of template machinery behind this system to allow for customization
-points and type-safety. For instance, <code>asio::require(ctx.get_executor(), asio::execution::mapping.new_thread)</code>
-(which asks the executor to launch every passed function into its own new thread)
-will fail to compile, since <code>io_context</code> can&#8217;t satisfy this. Error messages can be cryptic, though.</p>
-</div>
-<div class="sect2">
-<h3 id="_the_blocking_property">The <code>blocking</code> property</h3>
-<div class="paragraph">
-<p>As we&#8217;ve seen before, this property controls whether the function passed to <code>execute()</code>
-can be run immediately, as part of <code>execute()</code>, or must be queued for later execution.
-Possible values are:</p>
+<p>At the time of writing this article, support for modules is in its early stages. Concretely, when using CMake, the following requirements apply:</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p><code>asio::execution::blocking.never</code>: never run the function as part of <code>execute()</code>.
-This is what <code>asio::post()</code> does.</p>
+<p>CMake 3.28 (module stable support has been out for 2 releases).</p>
 </li>
 <li>
-<p><code>asio::execution::blocking.possibly</code>: the function may or may not be run as part of <code>execute()</code>.
-This is the default (what you get when calling <code>io_context::get_executor</code>).</p>
+<p>MSVC 14.34, clang-16, or gcc-14 (this hasn&#8217;t been released yet, but support has already been merged).</p>
 </li>
 <li>
-<p><code>asio::execution::blocking.always</code>: the function is always run as part of <code>execute()</code>.
-This is not supported by <code>io_context::executor</code>.</p>
+<p>When building for UNIX, Ninja 1.11.</p>
 </li>
 </ul>
 </div>
-</div>
-<div class="sect2">
-<h3 id="_the_relationship_property">The <code>relationship</code> property</h3>
 <div class="paragraph">
-<p><code>relationship</code> can take two values:</p>
+<p>Note that build2 has support for modules and even header units (where CMake hasn&#8217;t). As we only ship CMake files, I haven&#8217;t investigated build2 further.</p>
+</div>
+<div class="paragraph">
+<p>C++23 enables <code>import std</code>, which is supposed to improve compile-times. This is currently less developed:</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p><code>asio::execution::relationship.continuation</code>: indicates that the function passed to <code>execute()</code>
-is a continuation of the function calling <code>execute()</code>.</p>
+<p>MSVC standard library and libc++ ship with standard modules, while libstdc++ doesn&#8217;t support them yet.</p>
 </li>
 <li>
-<p><code>asio::execution::relationship.fork</code>: the opposite of the above. This is the default
-(what you get when calling <code>io_context::get_executor()</code>).</p>
+<p>In both cases, the library ships with the module source code, and the user needs to build the modules themselves.</p>
+</li>
+<li>
+<p>There is intention from CMake to add support for building standard modules in an easy way, but there is nothing yet. Manual approaches are possible for testing but not adequate for production.</p>
 </li>
 </ul>
 </div>
 <div class="paragraph">
-<p>Setting this property to <code>continuation</code> enables some optimizations
-in how the function gets scheduled. It only has effect if the function
-is queued (as opposed to run immediately). For <code>io_context</code>, when set, the function
-is scheduled to run in a faster, thread-local queue, rather than the context-global one.</p>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_understanding_asiodispatch_and_asiopost_docs">Understanding <code>asio::dispatch</code> and <code>asio::post</code> docs</h3>
-<div class="paragraph">
-<p>Armed with this knowledge, we are ready to understand <a href="https://www.boost.org/doc/libs/master/doc/html/boost_asio/reference/post/overload1.html">Asio&#8217;s docs on <code>post</code></a>. In essence, <code>post(f)</code>:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Obtains the executor associated to <code>f</code>. Recall that this is <code>system_executor</code> by default.</p>
-</li>
-<li>
-<p>Sets the <code>asio::execution::blocking.never</code> property by calling <code>require</code>. This guarantees
-that <code>f</code> won&#8217;t be ever run inline, even if called from a <code>io_context</code> thread.</p>
-</li>
-<li>
-<p>Attempts to set <code>asio::execution::relationship.fork</code> property by using <code>prefer</code>,
-disabling any optimization related to continuation.</p>
-</li>
-<li>
-<p>Attempts to set the <code>asio::execution::allocator</code> property. We haven&#8217;t seen this
-property, but it&#8217;s a way to customize memory allocations that the executor may need to perform.</p>
-</li>
-<li>
-<p>Calls <code>execute()</code> on the resulting executor.</p>
-</li>
-</ul>
+<p>No IDE supports modules yet (<code>clangd-19</code> enters an infinite loop when it sees an <code>import</code>), which disables autocompletion and highlighting.</p>
 </div>
 <div class="paragraph">
-<p>Note that this only happens if <code>execution::is_executor&lt;Ex&gt;::value</code> is <code>true</code>.
-This type trait tests whether <code>Ex</code> is a "proposed standard executor" (vs a "networking TS executor").
-Otherwise, it attempts to call <code>Ex::post</code>.</p>
-</div>
-<div class="paragraph">
-<p>On the other hand, <a href="https://www.boost.org/doc/libs/master/doc/html/boost_asio/reference/dispatch/overload1.html"><code>dispatch(f)</code></a>:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Obtains the executor associated to <code>f</code>.</p>
-</li>
-<li>
-<p>Attempts to set the <code>asio::execution::allocator</code> property.</p>
-</li>
-<li>
-<p>Calls <code>execute()</code> on the resulting executor.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>That is, <code>asio::dispatch</code> is almost equivalent to calling <code>execute()</code> directly.
-When used with the executor returned by <code>io_context::get_executor()</code>, this will
-behave like we described <a href="#post_dispatch">above</a>.</p>
-</div>
+<p>This means that this feature is very unlikely to be used in production right now. We may encounter early adopters and pet projects, but not many industry users yet.</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_work_tracking">Work tracking</h2>
+<h2 id="_how_to_modularize_a_library">How to modularize a library</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>The <code>asio::execution::outstanding_work</code> property is related to work tracking.
-For an <code>io_context</code>, "work tracking" refers to an internal counter that controls
-when <code>io_context::run</code> returns. The counter starts at zero, is incremented
-when asynchronous operations are started, and decremented again when they complete.
-When the counter reaches zero, <code>io_context::run</code> returns.</p>
+<p>Before measuring compile times, we need a familiar library to be consumed as a module. While Matt Borland and John Maddock have done a great job writing a modular version of Boost.Math, I don&#8217;t have realistic, slow-to-compile code to perform adequate benchmarks. So I&#8217;ve gone ahead and modularized standalone Asio.</p>
 </div>
 <div class="paragraph">
-<p>For instance:</p>
+<p>While Math&#8217;s approach works, it&#8217;s intrusive and requires a lot of work. An easier approach (employed by libc++) is exporting the required names with <code>using</code> declarations:</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">int main()
-{
-    // The work counter starts at zero.
-    // If we called run() now, it would return immediately.
-    asio::io_context ctx;
+<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">// File asio.cxx. Defines how to build Asio as a module so it can be imported
+module;
 
-    // Create an I/O object. Counter is still zero.
-    asio::steady_timer tim{ctx.get_executor()};
+#include &lt;asio.hpp&gt;
 
-    // Schedule an async operation. The counter is incremented.
-    tim.expires_after(std::chrono::seconds(2));
-    tim.async_wait([](error_code) {
-        // When the operation completes, the counter is decremented.
-        printf("Timer finished");
-    });
+export module asio;
 
-    // Run the context. Work tracking guarantees that run() won't return
-    // until the timer has expired and all the handlers have run
-    ctx.run();
+namespace asio {
+export using asio::io_context;
+export using asio::post;
+export using asio::any_io_executor;
+// ...
 }</code></pre>
 </div>
 </div>
 <div class="paragraph">
-<p>While counter management usually happens automatically, it can be triggered
-manually using the <code>asio::execution::outstanding_work</code> property.
-When set to <code>asio::execution::outstanding_work.tracked</code>, executors behave like
-a RAII-style resource which increment the work counter when constructed, and
-decrement it when destructed.</p>
+<p>There are a number of caveats with this approach though:</p>
 </div>
-<div class="paragraph">
-<p>For instance:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">void f() { printf("Function f\n"); }
-
-int main()
-{
-    asio::io_context ctx;
-
-    // Spawn a thread that has nothing to do with the io_context, that sleeps
-    // for some time and then dispatches a callback to the io_context.
-    // This simulates an external event source.
-    // When ex is created, the work counter is incremented.
-    std::jthread t{[ex = asio::require(ctx.get_executor(), asio::execution::outstanding_work.tracked)] {
-        // Sleep
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-
-        // Submit the function for execution. By moving the executor,
-        // we guarantee that the work counter is decremented when the work is done
-        // (think of ex like a smart pointer).
-        asio::dispatch(asio::bind_executor(std::move(ex), f));
-    }};
-
-    // Without the require statement, run() would return before the asio::dispatch
-    // call is made, and f wouldn't be called.
-    ctx.run();
-}</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>This mechanism is used by functions like <code>async_compose</code>, so it&#8217;s
-good to know about it. It&#8217;s also used internally by async operations
-to keep work active on executors bound to completion tokens.
-For instance:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">int main()
-{
-    // I/O context running the completions
-    asio::io_context ctx;
-
-    // A thread pool of one thread, that will run timers.
-    // Note that thread_pool is run internally, by its own threads,
-    // we don't need to explicitly call run()
-    asio::thread_pool pool{1};
-
-    // Create the timer
-    asio::steady_timer tim{pool.get_executor()};
-
-    // Launch the timer wait. Since the completion token
-    // we're passing to async_wait has an associated executor,
-    // Asio will maintain active work for this executor until
-    // the lambda is called. This uses the property system, as the example above.
-    tim.expires_after(std::chrono::seconds(2));
-    tim.async_wait(
-        asio::bind_executor(
-            ctx.get_executor(),
-            [](error_code ec) { printf("timer expired\n"); }
-        )
-    );
-
-    // Run the I/O context.
-    ctx.run();
-}</code></pre>
-</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>constexpr</code> variables need to be <code>inline</code> to be exported. This is not the case in most libraries, although it should be. This requires submitting PRs to libraries.</p>
+</li>
+<li>
+<p>Some libraries define template specializations in other namespaces, like <code>std</code>. These can probably not be exported with this approach, and would require additional work.</p>
+</li>
+<li>
+<p>It looks like making a definition available using <code>import</code> in some TUs and <code>#include</code> in others doesn&#8217;t cause ODR violations. Peter Dimov raised some concerns regarding this, so additional checks should be performed.</p>
+</li>
+</ul>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_conclusion">Conclusion</h2>
+<h2 id="_measuring_build_time_benefits">Measuring build-time benefits</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>Executor properties are not <em>that</em> hard once you understand them. Sooner or later,
-you end up having to write a test that involves a custom executor, or get an
-unintelligible compile error about something not confirming to the <code>executor</code> concept.
-When this happens, knowing how this all works will definitely help.</p>
+<p>The experiment involves building a simple, async, coroutine-based server that listens for connections, reads and writes using SSL.</p>
+</div>
+<div class="paragraph">
+<p>As with PCHs, only executables with several translation units including similar headers may see benefits. The benchmark involves adding translation units, all of them building the same server, with and without modules.</p>
+</div>
+<div class="paragraph">
+<p>Benchmark conditions:
+* clang-19 (Linux)
+* Release CMake build
+* Building with 3 cores  to measure the effects of parallelism.
+* Modular builds use Asio and the standard library as modules. The time to build such modules is included in the benchmark.</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 33.3333%;">
+<col style="width: 33.3333%;">
+<col style="width: 33.3334%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Number of translation units</th>
+<th class="tableblock halign-left valign-top">Build time (modules)</th>
+<th class="tableblock halign-left valign-top">Build time (headers)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">1 TU</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">09.124</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">06.909</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">2 TU</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">10.708</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">07.446</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">3 TU</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">12.280</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">09.773</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">4 TU</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">14.786</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">16.057</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">5 TU</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">16.065</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">16.631</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">6 TU</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">16.374</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">17.972</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">7 TU</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">20.966</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">24.695</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>Benefits are not as big as expected. Compiling with <code>-ftime-trace</code> with modules shows the following:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>The slower to build artifacts are the <code>std</code> module, the Asio module and the server TUs.</p>
+</li>
+<li>
+<p>The <code>std</code> and <code>asio</code> modules build in parallel (Asio uses includes for <code>std</code>). The server TUs require the module objects and won&#8217;t start building until the former are ready.</p>
+</li>
+<li>
+<p>Each of the two modules take around 4s to build. This is spent including headers and parsing declarations.</p>
+</li>
+<li>
+<p>Building server TUs take 6s in total: 2s in the compiler&#8217;s frontend (performing instantiations) and 4s in the backend (performing optimizations).</p>
+</li>
+<li>
+<p>The header version takes 9s. 3s are spent parsing headers, which is not present in the module version.</p>
+</li>
+<li>
+<p>Rebuilds that only involve the compiler&#8217;s frontend (common during local development) are significantly faster in the module version - from 4s to almost instant.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Although non-zero, I find the gains slightly disappointing. These may be bigger for bigger projects, debug builds or different libraries.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_consuming_boost_using_modules">Consuming Boost using modules</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>If we write module code for some Boost libraries, we need to ship the code and provide users with a way to build and consume it. As we ship CMake bindings with our libraries, the obvious path is to enhance this to include building Boost modules.</p>
+</div>
+<div class="paragraph">
+<p>This is what the end user&#8217;s CMake could look like:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlightjs highlight"><code class="language-cmake hljs" data-lang="cmake"># Same as today
+find_package(Boost REQUIRED)
+
+# A function defined by find_package(Boost). Builds the Boost.Asio module into a target named asio_module
+add_boost_asio_module(asio_module)
+# Possibly set compile flags required by dependent targets
+
+# Use the module
+add_executable(server main.cpp)
+target_link_libraries(server PRIVATE asio_module)</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This resembles the <code>pch</code> rule in B2. Under the hood, the function creates a library target that builds the corresponding Boost module. For instance:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlightjs highlight"><code class="language-cmake hljs" data-lang="cmake">function (add_boost_asio_module NAME)
+    set(ROOT @CMAKE_INSTALL_PREFIX@)
+    add_library(${NAME})
+    target_include_directories(${NAME} PRIVATE ${ROOT}/include)
+    target_compile_features(${NAME} PUBLIC cxx_std_23)
+    target_sources(${NAME} PUBLIC
+        FILE_SET modules_public TYPE CXX_MODULES FILES
+            ${ROOT}/module/asio.cxx
+    )
+endfunction()</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>A function may be more appropriate than an actual target because the module may need to be built several times, with different flags and definitions.</p>
+</div>
+<div class="paragraph">
+<p>Such an approach requires non-trivial changes in either Boost.CMake or <code>boost_install</code>. Note that <code>vcpkg</code> users would not be able to access this, since <code>vcpkg</code> does not use the official Boost CMake modules. <code>conan</code> and system package managers would benefit.</p>
 </div>
 </div>
 </div>
