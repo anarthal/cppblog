@@ -148,3 +148,9 @@ A function may be more appropriate than an actual target because the module may 
 
 Such an approach requires non-trivial changes in either Boost.CMake or `boost_install`. Note that `vcpkg` users would not be able to access this, since `vcpkg` does not use the official Boost CMake modules. `conan` and system package managers would benefit.
 
+## Conclusion
+
+* Modules are in a very early stage yet. We won't get lots of production users with this.
+* A "module-only" Boost2 is probably not a good idea at this point.
+* Modules may provide some compilation speed-up, but they're not a panacea. Instantiation time isn't affected by modules. You're not wasting your time making your libraries less header-only.
+* Providing modular "bindings" for some Boost libraries may be interesting to gain some real-world experience from early adopters.
