@@ -9,7 +9,7 @@ The experiment is available in https://github.com/anarthal/boost-modules-bench[t
 
 ## A mental model for modules
 
-Quick recap: modules are a pass:[C++]20 language-level construct that aims to provide better encapsulation and reduce build times. Modules add a new translation unit type: module units. Modules are built into a binary artifact called BMI.
+Quick recap: modules are a pass:[C++]20 language-level construct that aims to provide better encapsulation and reduce build times. Modules add a new translation unit type: module units. Modules are built into an artifact called BMI.
 
 In our context, as an overly simplification, we can think of them as "well behaved precompiled headers", with the following differences:
 
@@ -70,7 +70,7 @@ There are a number of caveats with this approach though:
 
 * `constexpr` variables need to be `inline` to be exported. This is not the case in most libraries, although it should be. This requires submitting PRs to libraries.
 * Some libraries define template specializations in other namespaces, like `std`. These can probably not be exported with this approach, and would require additional work.
-* It looks like making a definition available using `import` in some TUs and `#include` in others doesn't cause ODR violations. Peter Dimov raised some concerns regarding this, so additional checks should be performed.
+* Making a definition available using `import` in some TUs and `#include` in others seems to work when employing the `export using` technique, but may cause ODR violations otherwise, as pointed by Peter Dimov. This is troublesome considering the above point.
 
 ## Measuring build-time benefits
 
