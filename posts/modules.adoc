@@ -1,119 +1,150 @@
 # C++20 modules and Boost: an analysis
+:source-highlighter: highlightjs
+:toc: left
+Rubén Pérez (@anarthal)
 
-* This document contains an analysis on the benefits and costs of building module-enabled Boost libraries
-* Arisen from the boost2 only supporting modules? discussion in the Boost ML
+This document contains my findings when playing with pass:[C++]20 modules and the possibility of a modular Boost. The analysis is oriented towards analyzing the costs and benefits of building a distributing existing Boost libraries as pass:[C++]20 modules, so that users can write `import boost` in their code. The analysis focuses on header-only libraries.
 
-## Mental model for modules
+The experiment is available in https://github.com/anarthal/boost-modules-bench[this repository].
 
-* C++20 language-level construct. Original aim is to improve encapsulation and reduce build times.
-* Adds different types of translation units (module units). These are built into a binary artifact called BMI.
-* Overly simplification, but we can think of modules in this context as "well behaved precompiled headers", with the following differences:
-    * You can import as many modules as you want, while you can only include one PCH.
-    * Declarations need to be whitelisted to be exported from a module.
-    * Macros can't  be exported
-    * Like PCHs, BMIs are highly non-portable and must be built by the client.
-* There is also header units, which are supposed to be an intermediate step. No CMake support, ruled out for now.
+## A mental model for modules
 
-Modules require tighter integration with the build system. For header-only libraries, this means the build system the user is employing (e.g. CMake), not the one we use (e.g. b2).
-* For each import in a TU, the compiler needs the BMI for that module. This introduces a build-time dependency (as PCHs do).
-* The build system needs to scan TUs for imports to build the dependency graph.
+Quick recap: modules are a pass:[C++]20 language-level construct that aims to provide better encapsulation and reduce build times. Modules add a new translation unit type: module units. Modules are built into a binary artifact called BMI.
 
-## Tooling support
+In our context, as an overly simplification, we can think of them as "well behaved precompiled headers", with the following differences:
 
-When using CMake, the following requirements apply:
+* You can import as many modules as you want, while you can only include one precompiled header.
+* Declarations are not exported from modules by default - `export` needs to be used on the declarations to be exported.
+* Macros can't be exported from modules.
 
-* CMake 3.28
-* MSVC 14.34
-* clang-16
-* gcc-14 (this hasn't been released yet, but support has been already merged)
-* When building for UNIX, Ninja 1.11
+Like PCHs, BMIs are highly non-portable and must be built by the library user (and not by us), and need some cooperation from the build system. For header-only libraries, this is **the user's build system** (e.g. CMake), not the one we use (b2).
 
-Note that build2 has support for modules and even header units (which CMake doesn't). As we only ship CMake files, I haven't investigated build2 further.
+For each `import` the user places in their TU, the compiler needs a corresponding BMI. This introduces a build-time dependency (like precompiled headers do). The build system needs to scan TUs for imports to build the dependency graph.
+
+Header units (`import <boost/asio.hpp>;`) are supposed to be an intermediate between headers and modules. I haven't explored them because they don't have CMake support, and are supposedly slower.
+
+## Compiler and tooling support
+
+At the time of writing this article, support for modules is in its early stages. Concretely, when using CMake, the following requirements apply:
+
+* CMake 3.28 (module stable support has been out for 2 releases).
+* MSVC 14.34, clang-16, or gcc-14 (this hasn't been released yet, but support has already been merged).
+* When building for UNIX, Ninja 1.11.
+
+Note that build2 has support for modules and even header units (where CMake hasn't). As we only ship CMake files, I haven't investigated build2 further.
 
 C++23 enables `import std`, which is supposed to improve compile-times. This is currently less developed:
 
-* MSVC standard library and libc++ ship with standard modules, while libstdc++ doesn't support them yet.
-* In both cases, the library ships with the module source code, and you need to build these std modules yourself.
-* There is intention from CMake to add support for this, but not there yet. Manual approaches are possible for testing but not adequate for production.
+* MSVC standard library and pass:[libc++] ship with standard modules, while pass:[libstdc++] doesn't support them yet.
+* In both cases, the library ships with the module source code, and the user needs to build the modules themselves.
+* There is intention from CMake to add support for building standard modules in an easy way, but there is nothing yet. Manual approaches are possible for testing but not adequate for production.
+
+No IDE supports modules yet (`clangd-19` enters an infinite loop when it sees an `import`), which disables autocompletion and highlighting.
+
+This means that this feature is very unlikely to be used in production right now. We may encounter early adopters and pet projects, but not many industry users yet.
+
+## How to modularize a library
+
+Before measuring compile times, we need a familiar library to be consumed as a module. While Matt Borland and John Maddock have done a great job writing a modular version of Boost.Math, I don't have realistic, slow-to-compile code to perform adequate benchmarks. So I've gone ahead and modularized standalone Asio.
+
+While Math's approach works, it's intrusive and requires a lot of work. An easier approach (employed by pass:[libc++]) is exporting the required names with `using` declarations:
+
+[source,cpp]
+----
+// File asio.cxx. Defines how to build Asio as a module so it can be imported
+module;
+
+#include <asio.hpp>
+
+export module asio;
+
+namespace asio {
+export using asio::io_context;
+export using asio::post;
+export using asio::any_io_executor;
+// ...
+}
+----
+
+There are a number of caveats with this approach though:
+
+* `constexpr` variables need to be `inline` to be exported. This is not the case in most libraries, although it should be. This requires submitting PRs to libraries.
+* Some libraries define template specializations in other namespaces, like `std`. These can probably not be exported with this approach, and would require additional work.
+* It looks like making a definition available using `import` in some TUs and `#include` in others doesn't cause ODR violations. Peter Dimov raised some concerns regarding this, so additional checks should be performed.
+
+## Measuring build-time benefits
+
+The experiment involves building a simple, async, coroutine-based server that listens for connections, reads and writes using SSL.
+
+As with PCHs, only executables with several translation units including similar headers may see benefits. The benchmark involves adding translation units, all of them building the same server, with and without modules. 
+
+Benchmark conditions:
+* clang-19 (Linux)
+* Release CMake build
+* Building with 3 cores  to measure the effects of parallelism.
+* Modular builds use Asio and the standard library as modules. The time to build such modules is included in the benchmark.
+
+[cols="1,1,1"]
+|===
+| Number of translation units | Build time (modules) | Build time (headers)
+
+|1 TU    |09.124     |06.909
+|2 TU    |10.708     |07.446
+|3 TU    |12.280     |09.773
+|4 TU    |14.786     |16.057
+|5 TU    |16.065     |16.631
+|6 TU    |16.374     |17.972
+|7 TU    |20.966     |24.695
+|===
+
+Benefits are not as big as expected. Compiling with `-ftime-trace` with modules shows the following:
+
+* The slower to build artifacts are the `std` module, the Asio module and the server TUs.
+* The `std` and `asio` modules build in parallel (Asio uses includes for `std`). The server TUs require the module objects and won't start building until the former are ready.
+* Each of the two modules take around 4s to build. This is spent including headers and parsing declarations.
+* Building server TUs take 6s in total: 2s in the compiler's frontend (performing instantiations) and 4s in the backend (performing optimizations).
+* The header version takes 9s. 3s are spent parsing headers, which is not present in the module version.
+* Rebuilds that only involve the compiler's frontend (common during local development) are significantly faster in the module version - from 4s to almost instant.
+
+Although non-zero, I find the gains slightly disappointing. These may be bigger for bigger projects, debug builds or different libraries.
 
 ## Consuming Boost using modules
 
-My objective has been enabling `import boost.xxx` in client code consuming Boost, focusing on header-only libraries. Following `std`, the following model applies:
+If we write module code for some Boost libraries, we need to ship the code and provide users with a way to build and consume it. As we ship CMake bindings with our libraries, the obvious path is to enhance this to include building Boost modules.
 
-* We apply changes to the Boost libraries we want to modularize, so they can be built as modules. There are several models to this, see below.
-* We ship module units to the end user, as we ship headers and CMake files. We add CMake code that enables our users to build the Boost modules themselves.
-* The user builds the Boost modules as required and uses `import boost.xxx` in their code.
+This is what the end user's CMake could look like:
 
-This requires:
-
-* Make changes in the library, so it can be built as a module. This can be done either with Matt's method, or using mine (link).
-* Make changes in Boost.CMake or boost_install so appropriate CMake code is shipped to the user enabling modular consumption of Boost. See below.
-
-An example:
-
-```
-# Like it is today
+[source,cmake]
+----
+# Same as today
 find_package(Boost REQUIRED)
 
-# Defined by find_package(Boost). Builds the Boost.Asio module into a target named asio_module
+# A function defined by find_package(Boost). Builds the Boost.Asio module into a target named asio_module
 add_boost_asio_module(asio_module)
 # Possibly set compile flags required by dependent targets
 
 # Use the module
 add_executable(server main.cpp)
 target_link_libraries(server PRIVATE asio_module)
-```
+----
 
-## Measuring build-time benefits
+This resembles the `pch` rule in B2. Under the hood, the function creates a library target that builds the corresponding Boost module. For instance:
 
-* I've done an experiment with standalone Asio because it has no dependencies and is known to cause huge compile times.
-* A simple, async, coroutine-based server that listens for connections, reads, writes, and does SSL. Great compile times.
-* Benchmark builds an executable with several TUs, each of one implementing a function that instantiates all of this.
-* Run under clang-19, Linux, Release. Building with 3 cores to measure the effects of parallelism without needing too many TUs.
-* Modular builds use Asio and std as modules, and include the time to build such modules.
+[source,cmake]
+----
+function (add_boost_asio_module NAME)
+    set(ROOT @CMAKE_INSTALL_PREFIX@)
+    add_library(${NAME})
+    target_include_directories(${NAME} PRIVATE ${ROOT}/include)
+    target_compile_features(${NAME} PUBLIC cxx_std_23)
+    target_sources(${NAME} PUBLIC
+        FILE_SET modules_public TYPE CXX_MODULES FILES
+            ${ROOT}/module/asio.cxx
+    )
+endfunction()
+----
 
-        modules    no_modules
-1 TU    09.124     06.909
-2 TU    10.708     07.446
-3 TU    12.280     09.773
-4 TU    14.786     16.057
-5 TU    16.065     16.631
-6 TU    16.374     17.972
-7 TU    20.966     24.695
+A function may be more appropriate than an actual target because the module may need to be built several times, with different flags and definitions.
 
+Such an approach requires non-trivial changes in either Boost.CMake or `boost_install`. Note that `vcpkg` users would not be able to access this, since `vcpkg` does not use the official Boost CMake modules. `conan` and system package managers would benefit.
 
-* Benefits are small and only when an executable has many TUs.
-* Compiling with `-ftime-trace` with modules shows the following:
-    * There is 3 big objects: std module, asio module TUs in the executable importing the module.
-    * std module and asio build in parallel, main TUs require the module objects so need to wait.
-      Dependent modules would need to be built sequentially - but see CMake proposal.
-    * std is 3.5s, asio is 4s parsing headers.
-    * server spends 6s in total, 2s in frontend (instantiations), 4s in code gen (optimizations)
-    * rebuilds only involving frontend are significantly faster - good for quick feedback
-* Without modules
-    * only main TUs, more parallelizable
-    * main spends 9s in total, 3s+ parsing, rest as in the modules version
-
-Before ruling our modules, let's explore how to enable modular Boost.
-
-## Enabling modular consumption: C++
-
-* We can re-build everything as a v2 using modules and consumable just by modules. But high effort, high maintenance burden, low success probability.
-* Instead, we can provide "modular bindings", either with Matt's method, or using mine:
-
-```
-EXAMPLE
-```
-
-* Are we causing ODR violations doing this? But libc++ does it.
-* constexpr variables need to be inline to be exported. This should be the default, we can submit PRs fixing it
-* I don't see a way to export specializations in namespace std using this - and this can cause ODR violations I think
-
-## Enabling modular consumption: cmake
-
-* CMake: uses add_library, target_sources with special args.
-* We would need to expand what either Boost.CMake or boost_install do to provide appropriate CMake files with targets or functions so that the user can build their Boost modules. Note that vcpkg users won't benefit from this directly (they use their own cmake). Only people building with b2 or using Conan or system package managers.
-* CMake's way of building a module: you `add_library`, then `target_sources` with the module's TUs. That builds an actual library (which I understand is not required, but I haven't found a way).
-* Building the library when building Boost and installing doesn't seem a good idea, because this can be built many times with different options.
-* We may provide a function. Proof of concept in repo.
-* Compiled libraries not considered here.
