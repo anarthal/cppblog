@@ -472,7 +472,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h2 id="_a_mental_model_for_modules">A mental model for modules</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>Quick recap: modules are a C++20 language-level construct that aims to provide better encapsulation and reduce build times. Modules add a new translation unit type: module units. Modules are built into a binary artifact called BMI.</p>
+<p>Quick recap: modules are a C++20 language-level construct that aims to provide better encapsulation and reduce build times. Modules add a new translation unit type: module units. Modules are built into an artifact called BMI.</p>
 </div>
 <div class="paragraph">
 <p>In our context, as an overly simplification, we can think of them as "well behaved precompiled headers", with the following differences:</p>
@@ -585,7 +585,7 @@ export using asio::any_io_executor;
 <p>Some libraries define template specializations in other namespaces, like <code>std</code>. These can probably not be exported with this approach, and would require additional work.</p>
 </li>
 <li>
-<p>It looks like making a definition available using <code>import</code> in some TUs and <code>#include</code> in others doesn&#8217;t cause ODR violations. Peter Dimov raised some concerns regarding this, so additional checks should be performed.</p>
+<p>Making a definition available using <code>import</code> in some TUs and <code>#include</code> in others seems to work when employing the <code>export using</code> technique, but may cause ODR violations otherwise, as pointed by Peter Dimov. This is troublesome considering the above point.</p>
 </li>
 </ul>
 </div>
@@ -772,7 +772,7 @@ endfunction()</code></pre>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2024-04-06 16:11:15 UTC
+Last updated 2024-04-06 16:52:01 UTC
 </div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.18.3/highlight.min.js"></script>
