@@ -79,6 +79,7 @@ The experiment involves building a simple, async, coroutine-based server that li
 As with PCHs, only executables with several translation units including similar headers may see benefits. The benchmark involves adding translation units, all of them building the same server, with and without modules. 
 
 Benchmark conditions:
+
 * clang-19 (Linux)
 * Release CMake build
 * Building with 3 cores  to measure the effects of parallelism.
