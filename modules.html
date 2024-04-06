@@ -453,6 +453,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_how_to_modularize_a_library">How to modularize a library</a></li>
 <li><a href="#_measuring_build_time_benefits">Measuring build-time benefits</a></li>
 <li><a href="#_consuming_boost_using_modules">Consuming Boost using modules</a></li>
+<li><a href="#_conclusion">Conclusion</a></li>
 </ul>
 </div>
 </div>
@@ -735,10 +736,31 @@ endfunction()</code></pre>
 </div>
 </div>
 </div>
+<div class="sect1">
+<h2 id="_conclusion">Conclusion</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Modules are in a very early stage yet. We won&#8217;t get lots of production users with this.</p>
+</li>
+<li>
+<p>A "module-only" Boost2 is probably not a good idea at this point.</p>
+</li>
+<li>
+<p>Modules may provide some compilation speed-up, but they&#8217;re not a panacea. Instantiation time isn&#8217;t affected by modules. You&#8217;re not wasting your time making your libraries less header-only.</p>
+</li>
+<li>
+<p>Providing modular "bindings" for some Boost libraries may be interesting to gain some real-world experience from early adopters.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2024-04-06 15:43:17 UTC
+Last updated 2024-04-06 15:51:20 UTC
 </div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.18.3/highlight.min.js"></script>
