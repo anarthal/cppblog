@@ -1,18 +1,21 @@
-# C++20 modules and Boost: deep dive
+= C++20 modules and Boost: deep dive
 :source-highlighter: highlightjs
 :toc: left
 Rubén Pérez (@anarthal)
 
 This document is a follow-up to https://anarthal.github.io/cppblog/modules[my previous post on C++20 modules and Boost]. Following the generated debates, we will cover:
 
-* A benchmark about compile-times when re-building code consuming modules. (TODO: link)
-* Additional information on which modularization strategies work cross-platform and which ones don't, together with their CMake implications. (TODO: link).
-* A mental model for Boost libraries with separate compilation. (TODO: link)
-* Unit testing implications. (TODO: link)
+* xref:#rebuilds[A benchmark] about compile-times when re-building code consuming modules.
+* xref:#modularizing[Additional caveats] when modularizing a library.
+* xref:#macros[How to handle macros].
+* A mental model for xref:#compiled[Boost libraries with separate compilation].
+* A more realistic xref:#cmake[CMake approach].
+* xref:#testing[Unit testing implications].
 
-Reading (TODO: link) the previous post is strongly recommended. With the information in this post, we (the Boost author community) should have enough information to make an informed decision about module support in Boost (TODO: link).
+Reading https://anarthal.github.io/cppblog/modules[the previous post] is strongly recommended. With the information in this post, we (the Boost author community) should have enough information to xref:#decision[make an informed decision about module support in Boost].
 
-## Re-build time benefits
+[#rebuilds]
+== Re-build time benefits
 
 In https://anarthal.github.io/cppblog/modules#_measuring_build_time_benefits[the previous post], we benchmarked build times for an Asio-based server. We used the modular version of `libc++` and a modular standalone Asio prototype to measure build times, varying the number of translation units. We observed very small benefits, increasing with the number of TUs.
 
@@ -54,7 +57,8 @@ This means that errors are reported almost instantly. The measurement was taken 
 
 Takeaway: *modules can make the local development feedback loop faster*.
 
-## Modularizing a library requires adapting it
+[#modularizing]
+== Modularizing a library requires adapting it
 
 The promising `export using` technique I talked about in https://anarthal.github.io/cppblog/modules#_how_to_modularize_a_library[my previous post] is unfortunately limited to clang.
 
@@ -65,7 +69,7 @@ Under MSVC, *mixing standard includes and imports is problematic*. This is true 
 
 This very much likely applies to our code, too - if we mix including and importing the same Boost libraries, we're likely going to run into trouble.
 
-*Exporting template specializations* in namespace `std` is also problematic - have a look at the appendix (TODO: link) if you're curious.
+*Exporting template specializations* in namespace `std` is also problematic. xref:#template-specs[Have a look at the appendix] if you're curious.
 
 With this in mind, Matt's approach with Boost.Math becomes the only viable one. This can be summarized as:
 
@@ -79,7 +83,8 @@ See https://github.com/cppalliance/boost2/blob/master/libs/math/module/core.cxx[
 Takeaway 1: *modularizing a library requires some changes and extra maintenance effort*.
 Takeaway 2: *we should consume std and other Boost libraries via `import`*.
 
-## Exporting macros: a necessary evil
+[#macros]
+== Exporting macros: a necessary evil
 
 Modules don't export macros. You need to use traditional include files to do that. Although the pass:[C++] world tries to flee from macros, the reality is that these are necessary at certain points. Concretely, in Boost's case:
 
@@ -91,7 +96,8 @@ Note that using `#include <version>` looks compatible with `import std` on all p
 
 Takeaway: *we can't just ignore macros*. Libraries need to export these as required 
 
-## Compiled libraries
+[#compiled]
+== Compiled libraries
 
 We have two approaches for compiled libraries:
 
@@ -111,20 +117,21 @@ In a compiled library, you'd:
 * Mark as `__declspec(dllexport)` compiled functions that are considered implementation details, and are not to be called by the end user.
 * Mark as `export` inline functions and templates that may be called by the end user.
 
-Modularizing compiled libraries is almost identical to doing so for header-only libraries (with some details). See (TODO: link) this example as a proof-of-concept for the charconv library.
+Modularizing compiled libraries is almost identical to doing so for header-only libraries (with some details). I've done https://github.com/anarthal/modules-playground/tree/master/charconv[a clang-based proof-of-concept] with Boost.Charconv.
 
 Note that this seems to work fine even if the library includes the standard library in its implementation. This makes sense because the library's translation units are not seen by the compiler when importing, but only by the linker.
 
-Takeaway: *we can treat compiled libraries in a similar way as header-only ones*, regarding modular consumption.
+Takeaway: *we can probably treat compiled libraries in a similar way as header-only ones*, regarding modular consumption.
 
-## CMake: the tricky part
+[#cmake]
+== CMake: the tricky part
 
 As I mentioned in my previous post, we need to provide a way for our users to consume our modules, probably using CMake. The https://anarthal.github.io/cppblog/modules#_consuming_boost_using_modules[simple approach] I proposed in my previous post falls short for modules with many dependencies. So let's consider our options.
 
 I've https://discourse.cmake.org/t/advice-on-c-20-modules-boost/10641[reached the CMake team for help]. Their recommended method is:
 
 * As part of the Boost build, create libraries with the module code. This is, call `add_library` and `target_sources` once per Boost library.
-* Install the generated libraries, include files, and module files following the usual CMake install practice. This ends up creating packages the user can consume via `find_package`, resulting in `IMPORTED` targets with some special properties signaling the presence of modules (see TODO: link `IMPORTED_CXX_MODULES_COMPILE_DEFINITIONS`).
+* Install the generated libraries, include files, and module files following the usual CMake install practice. This ends up creating packages the user can consume via `find_package`, resulting in `IMPORTED` targets with some special properties signaling the presence of modules (see https://cmake.org/cmake/help/latest/prop_tgt/IMPORTED_CXX_MODULES_COMPILE_DEFINITIONS.html[`IMPORTED_CXX_MODULES_COMPILE_DEFINITIONS`]).
 * The consumer calls `find_package` and consumes the module via `target_link_libraries`. This generates BMIs in the consumer's project for the required modules and their dependencies.
 
 While this seems the approach to follow, there are a number of caveats:
@@ -144,7 +151,8 @@ As an alternative, we can consider rolling our own CMake machinery, extending ht
 
 Takeaway: *CMake support is the most difficult part in this story*. It requires either assuming big limitations or writing a considerable amount of CMake code.
 
-## Testing implications
+[#testing]
+== Testing implications
 
 If we are to provide module code for Boost, we need to test its correctness before shipping it to users. Having a module build without errors is probably not enough. For instance, MSVC has https://developercommunity.visualstudio.com/t/Using-__try-in-an-inline-function-in-a-h/10186252[a bug] causing problems with SEH `__try`/`__catch` constructs.
 
@@ -156,7 +164,8 @@ We'd also need a flow to verify that the generated CMake files can be consumed c
 
 Takeaway: *modularizing requires additional work regarding testing*.
 
-## Moving forward
+[#decision]
+== Moving forward
 
 The next step would be to build a more realistic proof-of-concept that demonstrates the modularization process end-to-end. This includes modularizing a library, its dependencies, its tests, and writing any required CMake/b2 code. I think Boost.Url is a good candidate, as it's compiled, has some header-only dependencies, and is actively maintained.
 
@@ -164,7 +173,8 @@ But before this, we (Boost maintainers) should make a decision, as a community: 
 
 *Boost users - we'd also like to hear from you*. Would you use our modules in your codebase if we decide to provide them?
 
-## Appendix: exporting template specializations
+[#template-spec]
+== Appendix: exporting template specializations
 
 Consider this code in the Asio library:
 
@@ -210,4 +220,4 @@ static_assert(std::is_error_code_enum<asio::error::basic_errors>::value);
 * Under clang, the assertion succeeds, as the template specialization gets exported from the `asio` module.
 * Under MSVC, the assertion fails. Apparently, the specialization is not considered to be https://eel.is/c++draft/module.global.frag[decl-reachable] from the module purview and thus discarded.
 
-TODO: wrap this up
+I don't know which is the correct behavior, or whether this is implementation-defined. In any case, we can't rely on clang's behavior.
