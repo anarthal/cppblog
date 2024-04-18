@@ -448,20 +448,14 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
 <ul class="sectlevel1">
-<li><a href="#_re_build_time_benefits">Re-build time benefits</a></li>
-<li><a href="#_how_to_modularize_a_library_the_pointy_edges">How to modularize a library: the pointy edges</a>
-<ul class="sectlevel2">
-<li><a href="#_mixing_standard_includes_and_imports_is_problematic">Mixing standard includes and imports is problematic</a></li>
-<li><a href="#_exporting_template_specializations">Exporting template specializations</a></li>
-<li><a href="#_msvc_seh_causes_compiler_errors">MSVC SEH causes compiler errors</a></li>
-<li><a href="#_exporting_macros">Exporting macros</a></li>
-<li><a href="#_wrapping_up">Wrapping up</a></li>
-</ul>
-</li>
-<li><a href="#_compiled_libraries">Compiled libraries</a></li>
-<li><a href="#_cmake_the_tricky_part">CMake: the tricky part</a></li>
-<li><a href="#_testing_implications">Testing implications</a></li>
-<li><a href="#_moving_forward">Moving forward</a></li>
+<li><a href="#rebuilds">Re-build time benefits</a></li>
+<li><a href="#modularizing">Modularizing a library requires adapting it</a></li>
+<li><a href="#macros">Exporting macros: a necessary evil</a></li>
+<li><a href="#compiled">Compiled libraries</a></li>
+<li><a href="#cmake">CMake: the tricky part</a></li>
+<li><a href="#testing">Testing implications</a></li>
+<li><a href="#decision">Moving forward</a></li>
+<li><a href="#template-spec">Appendix: exporting template specializations</a></li>
 </ul>
 </div>
 </div>
@@ -474,26 +468,32 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div class="ulist">
 <ul>
 <li>
-<p>A benchmark about compile-times when re-building code consuming modules. (TODO: link)</p>
+<p><a href="#rebuilds">A benchmark</a> about compile-times when re-building code consuming modules.</p>
 </li>
 <li>
-<p>Additional information on which modularization strategies work cross-platform and which ones don&#8217;t, together with their CMake implications. (TODO: link).</p>
+<p><a href="#modularizing">Additional caveats</a> when modularizing a library.</p>
 </li>
 <li>
-<p>A mental model for Boost libraries with separate compilation. (TODO: link)</p>
+<p><a href="#macros">How to handle macros</a>.</p>
 </li>
 <li>
-<p>Unit testing implications. (TODO: link)</p>
+<p>A mental model for <a href="#compiled">Boost libraries with separate compilation</a>.</p>
+</li>
+<li>
+<p>A more realistic <a href="#cmake">CMake approach</a>.</p>
+</li>
+<li>
+<p><a href="#testing">Unit testing implications</a>.</p>
 </li>
 </ul>
 </div>
 <div class="paragraph">
-<p>Reading (TODO: link) the previous post is strongly recommended. With the information in this post, we (the Boost author community) should have enough information to make an informed decision about module support in Boost (TODO: link).</p>
+<p>Reading <a href="https://anarthal.github.io/cppblog/modules">the previous post</a> is strongly recommended. With the information in this post, we (the Boost author community) should have enough information to <a href="#decision">make an informed decision about module support in Boost</a>.</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_re_build_time_benefits">Re-build time benefits</h2>
+<h2 id="rebuilds">Re-build time benefits</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>In <a href="https://anarthal.github.io/cppblog/modules#_measuring_build_time_benefits">the previous post</a>, we benchmarked build times for an Asio-based server. We used the modular version of <code>libc++</code> and a modular standalone Asio prototype to measure build times, varying the number of translation units. We observed very small benefits, increasing with the number of TUs.</p>
@@ -610,15 +610,13 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </div>
 </div>
 <div class="sect1">
-<h2 id="_how_to_modularize_a_library_the_pointy_edges">How to modularize a library: the pointy edges</h2>
+<h2 id="modularizing">Modularizing a library requires adapting it</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>The promising <code>export using</code> technique I talked about in <a href="https://anarthal.github.io/cppblog/modules#_how_to_modularize_a_library">my previous post</a> is unfortunately limited to clang. There are two issues which prevent its use under MSVC.</p>
+<p>The promising <code>export using</code> technique I talked about in <a href="https://anarthal.github.io/cppblog/modules#_how_to_modularize_a_library">my previous post</a> is unfortunately limited to clang.</p>
 </div>
-<div class="sect2">
-<h3 id="_mixing_standard_includes_and_imports_is_problematic">Mixing standard includes and imports is problematic</h3>
 <div class="paragraph">
-<p>This is true even if the mix happens in different translation units, as long as they interact via <code>import</code>. For instance, this is problematic:</p>
+<p>Under MSVC, <strong>mixing standard includes and imports is problematic</strong>. This is true even if the mix happens in different translation units, as long as they interact via <code>import</code>. It shouldn&#8217;t be the case, according to the standard, but the fix may take time to arrive. For instance, this is problematic:</p>
 </div>
 <div class="ulist">
 <ul>
@@ -631,14 +629,229 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </ul>
 </div>
 <div class="paragraph">
-<p>As confirmed by a Microsoft developer, this is known to cause problems. While the standard mandates that this shouldn&#8217;t be the case, fixing it may take some time yet, so we can&#8217;t rely on it.</p>
-</div>
-<div class="paragraph">
 <p>This very much likely applies to our code, too - if we mix including and importing the same Boost libraries, we&#8217;re likely going to run into trouble.</p>
 </div>
+<div class="paragraph">
+<p><strong>Exporting template specializations</strong> in namespace <code>std</code> is also problematic. <a href="#template-specs">Have a look at the appendix</a> if you&#8217;re curious.</p>
 </div>
-<div class="sect2">
-<h3 id="_exporting_template_specializations">Exporting template specializations</h3>
+<div class="paragraph">
+<p>With this in mind, Matt&#8217;s approach with Boost.Math becomes the only viable one. This can be summarized as:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Create a <code>BOOST_XXX_MODULE_EXPORT</code> macro, defined to <code>export</code> if we&#8217;re doing modules, empty otherwise.</p>
+</li>
+<li>
+<p>Annotate all public entities in our headers with the aforementioned macro.</p>
+</li>
+<li>
+<p>Ifdef-out all third-party includes from our headers if we&#8217;re doing modules (including standard library and other Boost library includes) - these will be made available with <code>import</code>.</p>
+</li>
+<li>
+<p>Create a <code>module.cxx</code> source file that brings all headers in.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>See <a href="https://github.com/cppalliance/boost2/blob/master/libs/math/module/core.cxx">Matt&#8217;s Boost.Math work</a> for an example.</p>
+</div>
+<div class="paragraph">
+<p>Takeaway 1: <strong>modularizing a library requires some changes and extra maintenance effort</strong>.
+Takeaway 2: <strong>we should consume std and other Boost libraries via <code>import</code></strong>.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="macros">Exporting macros: a necessary evil</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Modules don&#8217;t export macros. You need to use traditional include files to do that. Although the C++ world tries to flee from macros, the reality is that these are necessary at certain points. Concretely, in Boost&#8217;s case:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Libraries like <a href="https://www.boost.org/doc/libs/1_85_0/libs/assert/doc/html/assert.html">Boost.Assert</a> or <a href="https://www.boost.org/doc/libs/1_85_0/libs/config/doc/html/index.html">Boost.Config</a> are almost just macros. I propose not creating any modules for these, but just including them as you&#8217;d do with <code>&lt;assert.h&gt;</code>. Some work is required to ifdef-out standard includes when present.</p>
+</li>
+<li>
+<p>Some libraries expose macros indicating the presence of platform-specific features. For instance, the <code>asio::local::stream_protocol</code> class is only present if <code>ASIO_HAS_LOCAL_SOCKETS</code> is defined. <code>if constexpr</code> is probably not suitable for this task (see <a href="https://godbolt.org/z/n7e5ceTxY">Godbolt 1</a> and <a href="https://godbolt.org/z/PdsE8cdKT">Godbolt 2</a>). We&#8217;d need to refactor <code>config.hpp</code> headers for such libraries to provide the relevant macros.</p>
+</li>
+<li>
+<p>Other libraries expose a combination of macros and types, like Boost.Test. Non-trivial refactoring is required to make these work.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Note that using <code>#include &lt;version&gt;</code> looks compatible with <code>import std</code> on all platforms.</p>
+</div>
+<div class="paragraph">
+<p>Takeaway: <strong>we can&#8217;t just ignore macros</strong>. Libraries need to export these as required</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="compiled">Compiled libraries</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>We have two approaches for compiled libraries:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Adapt their implementation (<code>.cpp</code> files) so they are conditionally built and consumed using modules.</p>
+</li>
+<li>
+<p>Keep their implementation files as they are, and provide modular code for the interface (as we&#8217;d do with header-only libraries).</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>The second approach seems the most suitable one for us, since it&#8217;d make our modules compatible with the binary libraries we generate today. Our libraries would be built using <code>b2</code> as they are today, and would also be importable.</p>
+</div>
+<div class="paragraph">
+<p>How does <code>export</code> interact with <code>__declspec(dllexport)</code> and similar constructs? The following mental model may be useful:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Think of <code>export</code> a construct for the compiler, affecting declarations and definitions.</p>
+</li>
+<li>
+<p>Think of <code>__declspec(dllexport)</code> and friends as constructs for the linker, affecting symbols in object files.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>In a compiled library, you&#8217;d:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Mark as both <code>export</code> and <code>__declspec(dllexport)</code> compiled functions that should be visible by importers.</p>
+</li>
+<li>
+<p>Mark as <code>__declspec(dllexport)</code> compiled functions that are considered implementation details, and are not to be called by the end user.</p>
+</li>
+<li>
+<p>Mark as <code>export</code> inline functions and templates that may be called by the end user.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Modularizing compiled libraries is almost identical to doing so for header-only libraries (with some details). I&#8217;ve done <a href="https://github.com/anarthal/modules-playground/tree/master/charconv">a clang-based proof-of-concept</a> with Boost.Charconv.</p>
+</div>
+<div class="paragraph">
+<p>Note that this seems to work fine even if the library includes the standard library in its implementation. This makes sense because the library&#8217;s translation units are not seen by the compiler when importing, but only by the linker.</p>
+</div>
+<div class="paragraph">
+<p>Takeaway: <strong>we can probably treat compiled libraries in a similar way as header-only ones</strong>, regarding modular consumption.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="cmake">CMake: the tricky part</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>As I mentioned in my previous post, we need to provide a way for our users to consume our modules, probably using CMake. The <a href="https://anarthal.github.io/cppblog/modules#_consuming_boost_using_modules">simple approach</a> I proposed in my previous post falls short for modules with many dependencies. So let&#8217;s consider our options.</p>
+</div>
+<div class="paragraph">
+<p>I&#8217;ve <a href="https://discourse.cmake.org/t/advice-on-c-20-modules-boost/10641">reached the CMake team for help</a>. Their recommended method is:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>As part of the Boost build, create libraries with the module code. This is, call <code>add_library</code> and <code>target_sources</code> once per Boost library.</p>
+</li>
+<li>
+<p>Install the generated libraries, include files, and module files following the usual CMake install practice. This ends up creating packages the user can consume via <code>find_package</code>, resulting in <code>IMPORTED</code> targets with some special properties signaling the presence of modules (see <a href="https://cmake.org/cmake/help/latest/prop_tgt/IMPORTED_CXX_MODULES_COMPILE_DEFINITIONS.html"><code>IMPORTED_CXX_MODULES_COMPILE_DEFINITIONS</code></a>).</p>
+</li>
+<li>
+<p>The consumer calls <code>find_package</code> and consumes the module via <code>target_link_libraries</code>. This generates BMIs in the consumer&#8217;s project for the required modules and their dependencies.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>While this seems the approach to follow, there are a number of caveats:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>The <code>add_library</code> calls end up generating actual binary libraries, even when the original library was header-only. Why does this happen?</p>
+</li>
+<li>
+<p>When building a module translation unit, the compiler generates a BMI and an object file.</p>
+</li>
+<li>
+<p>The object file contains initialization code required by the module (<a href="https://discourse.cmake.org/t/header-only-libraries-and-c-20-modules/10680/3">module initializer symbols</a>). For instance, Asio requires initializing its error categories.</p>
+</li>
+<li>
+<p>When CMake "builds a module" in the consumer&#8217;s project, it builds the BMI, and <em>not</em> the object files.</p>
+</li>
+<li>
+<p>This means we now have <code>libboost_asio.a</code>, <code>libboost_beast.a</code> and all others, which get installed to the user&#8217;s machine and linked into the user&#8217;s final executable, which can create further compatibility problems.</p>
+</li>
+<li>
+<p>In the consumer&#8217;s project, BMIs are built just once and use the original project&#8217;s compiler options, not the user&#8217;s.</p>
+</li>
+<li>
+<p>This falls into similar limitations as distributing the BMI itself.</p>
+</li>
+<li>
+<p>The CMake team <a href="https://discourse.cmake.org/t/advice-on-c-20-modules-boost/10641/3">is working on enhancing this</a> to build BMIs according to the consumer&#8217;s target settings, but there is not an ETA for it.</p>
+</li>
+<li>
+<p>There is no clean way for consumers to define configuration macros affecting the library (like <code>ASIO_DISABLE_THREADS</code>). Such macros may affect initialization code contained in the newly created libraries (which doesn&#8217;t get rebuilt in the consumer), which leads to problems.</p>
+</li>
+<li>
+<p>Using this requires us to generate releases with CMake, rather than b2.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>As an alternative, we can consider rolling our own CMake machinery, extending <a href="https://anarthal.github.io/cppblog/modules#_consuming_boost_using_modules">what I proposed in my previous post</a>, following the mantra "all module code gets built by the user".</p>
+</div>
+<div class="paragraph">
+<p>Takeaway: <strong>CMake support is the most difficult part in this story</strong>. It requires either assuming big limitations or writing a considerable amount of CMake code.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="testing">Testing implications</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>If we are to provide module code for Boost, we need to test its correctness before shipping it to users. Having a module build without errors is probably not enough. For instance, MSVC has <a href="https://developercommunity.visualstudio.com/t/Using-" class="bare">https://developercommunity.visualstudio.com/t/Using-</a><em>try-in-an-inline-function-in-a-h/10186252[a bug] causing problems with SEH <code></em>try</code>/<code>__catch</code> constructs.</p>
+</div>
+<div class="paragraph">
+<p>The Asio module, which uses the aforementioned constructs, builds with a warning. The problem manifests only in the module&#8217;s consumer, when using functionality that calls into code that uses SEH, in the form of a cryptic build error. Forgetting to export functions is another potential issue that won&#8217;t be noticed while building.</p>
+</div>
+<div class="paragraph">
+<p>The most reliable way to test is adapting the library&#8217;s test suite to conditionally use modules, in a similar way as we&#8217;d be adapting headers. This extra work should be able to detect most real problems.</p>
+</div>
+<div class="paragraph">
+<p>We&#8217;d also need a flow to verify that the generated CMake files can be consumed correctly, in a similar fashion to the "CMake consumer tests" we currently run in most libraries.</p>
+</div>
+<div class="paragraph">
+<p>Takeaway: <strong>modularizing requires additional work regarding testing</strong>.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="decision">Moving forward</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The next step would be to build a more realistic proof-of-concept that demonstrates the modularization process end-to-end. This includes modularizing a library, its dependencies, its tests, and writing any required CMake/b2 code. I think Boost.Url is a good candidate, as it&#8217;s compiled, has some header-only dependencies, and is actively maintained.</p>
+</div>
+<div class="paragraph">
+<p>But before this, we (Boost maintainers) should make a decision, as a community: <strong>do we want modules?</strong> do we want to assume the extra cost of supporting modules in our codebase? We roughly know the benefits and downsides. It doesn&#8217;t make sense to go forward if module-related PRs are going to be rejected.</p>
+</div>
+<div class="paragraph">
+<p><strong>Boost users - we&#8217;d also like to hear from you</strong>. Would you use our modules in your codebase if we decide to provide them?</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="template-spec">Appendix: exporting template specializations</h2>
+<div class="sectionbody">
 <div class="paragraph">
 <p>Consider this code in the Asio library:</p>
 </div>
@@ -694,217 +907,14 @@ static_assert(std::is_error_code_enum&lt;asio::error::basic_errors&gt;::value);<
 </ul>
 </div>
 <div class="paragraph">
-<p>I don&#8217;t know which behavior is correct. But this implies that headers need to be included within the module purview, which requires additional effort. This is the approach Matt Borland followed when he modularized Boost.Math.</p>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_msvc_seh_causes_compiler_errors">MSVC SEH causes compiler errors</h3>
-<div class="paragraph">
-<p>Windows-specific code using the <code><em>try</code>/<code></em>catch</code> constructs, present in Asio, causes trouble. This seems to be <a href="https://developercommunity.visualstudio.com/t/Using-__try-in-an-inline-function-in-a-h/10186252">a bug in MSVC</a> which never got deployed.</p>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_exporting_macros">Exporting macros</h3>
-<div class="paragraph">
-<p>Modules don&#8217;t export macros. You need to use traditional include files to do that. Boost has many useful macros that may be required internally and by users:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Libraries like <a href="https://www.boost.org/doc/libs/1_85_0/libs/assert/doc/html/assert.html">Boost.Assert</a> or <a href="https://www.boost.org/doc/libs/1_85_0/libs/config/doc/html/index.html">Boost.Config</a> are almost just macros. I propose not creating any modules for these, but just including them as you&#8217;d do with <code>&lt;assert.h&gt;</code>. Some work is required to ifdef-out standard includes when present.</p>
-</li>
-<li>
-<p>Some libraries expose macros indicating the presence of platform-specific features. For instance, the <code>asio::local::stream_protocol</code> class is only present if <code>ASIO_HAS_LOCAL_SOCKETS</code> is defined. <code>if constexpr</code> is probably not suitable for this task (see <a href="https://godbolt.org/z/n7e5ceTxY">this</a> and <a href="https://godbolt.org/z/1TboMnGWT">this</a> Godbolts). We&#8217;d need to refactor <code>config.hpp</code> headers for such libraries to provide the relevant macros.</p>
-</li>
-<li>
-<p>Other libraries expose a combination of macros and types, like Boost.Test. Non-trivial refactoring is required to make these work.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Note that using <code>#include &lt;version&gt;</code> looks safe on all platforms, even when using <code>import std</code>.</p>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_wrapping_up">Wrapping up</h3>
-<div class="ulist">
-<ul>
-<li>
-<p>Modularizing requires intrusive changes: ifdef-ing out includes, marking names as exported and potentially refactoring some headers to export certain macros.</p>
-</li>
-<li>
-<p>If a Boost library X consumes another Boost library Y, it will <code>import boost.Y</code>, and possibly include a Y header, if it requires some macros.</p>
-</li>
-</ul>
-</div>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_compiled_libraries">Compiled libraries</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>We have two approaches for compiled libraries:</p>
-</div>
-<div class="olist arabic">
-<ol class="arabic">
-<li>
-<p>Adapt their implementation (<code>.cpp</code> files) so they are conditionally built and consumed using modules.</p>
-</li>
-<li>
-<p>Keep their implementation files as they are, and provide modular code for the interface (as we&#8217;d do with header-only libraries).</p>
-</li>
-</ol>
-</div>
-<div class="paragraph">
-<p>The second approach seems the most suitable one for us, since it&#8217;d make our modules compatible with the binary libraries we generate today. Our libraries would be built using <code>b2</code> as they are today, and would also be importable.</p>
-</div>
-<div class="paragraph">
-<p>How does <code>export</code> interact with <code>__declspec(dllexport)</code> and similar constructs? The following mental model may be useful:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Think of <code>export</code> a construct for the compiler, affecting declarations and definitions.</p>
-</li>
-<li>
-<p>Think of <code>__declspec(dllexport)</code> and friends as constructs for the linker, affecting symbols in object files.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>In a compiled library, you&#8217;d:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Mark as both <code>export</code> and <code>__declspec(dllexport)</code> compiled functions that should be visible by importers.</p>
-</li>
-<li>
-<p>Mark as <code>__declspec(dllexport)</code> compiled functions that are considered implementation details, and are not to be called by the end user.</p>
-</li>
-<li>
-<p>Mark as <code>export</code> inline functions and templates that may be called by the end user.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Modularizing compiled libraries is almost identical to doing so for header-only libraries (with some details). See (TODO: link) this example as a proof-of-concept for the charconv library.</p>
-</div>
-<div class="paragraph">
-<p>Note that this seems to work fine even if the library includes the standard library in its implementation. This makes sense because the library&#8217;s translation units are not seen by the compiler when importing, but only by the linker.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_cmake_the_tricky_part">CMake: the tricky part</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>As I mentioned in my previous post, we need to provide a way for our users to consume our modules, probably using CMake. The <a href="https://anarthal.github.io/cppblog/modules#_consuming_boost_using_modules">simple approach</a> I proposed in my previous post falls short for modules with many dependencies. So let&#8217;s consider our options.</p>
-</div>
-<div class="paragraph">
-<p>I&#8217;ve <a href="https://discourse.cmake.org/t/advice-on-c-20-modules-boost/10641">reached the CMake team for help</a>. Their recommended method is:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>As part of the Boost build, create libraries with the module code. This is, call <code>add_library</code> and <code>target_sources</code> once per Boost library.</p>
-</li>
-<li>
-<p>Install the generated libraries, include files, and module files following the usual CMake install practice. This ends up creating packages the user can consume via <code>find_package</code>, resulting in <code>IMPORTED</code> targets with some special properties signaling the presence of modules (see TODO: link <code>IMPORTED_CXX_MODULES_COMPILE_DEFINITIONS</code>).</p>
-</li>
-<li>
-<p>The consumer calls <code>find_package</code> and consumes the module via <code>target_link_libraries</code>. This generates BMIs in the consumer&#8217;s project for the required modules and their dependencies.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>While this seems the approach to follow, there are a number of caveats:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>The <code>add_library</code> calls end up generating actual binary libraries, even when the original library was header-only. Why does this happen?</p>
-</li>
-<li>
-<p>When building a module translation unit, the compiler generates a BMI and an object file.</p>
-</li>
-<li>
-<p>The object file contains initialization code required by the module (<a href="https://discourse.cmake.org/t/header-only-libraries-and-c-20-modules/10680/3">module initializer symbols</a>). For instance, Asio requires initializing its error categories.</p>
-</li>
-<li>
-<p>When CMake "builds a module" in the consumer&#8217;s project, it builds the BMI, and <em>not</em> the object files.</p>
-</li>
-<li>
-<p>This means we now have <code>libboost_asio.a</code>, <code>libboost_beast.a</code> and all others, which get installed to the user&#8217;s machine and linked into the user&#8217;s final executable, which can create further compatibility problems.</p>
-</li>
-<li>
-<p>In the consumer&#8217;s project, BMIs are built just once and use the original project&#8217;s compiler options, not the user&#8217;s.</p>
-</li>
-<li>
-<p>This falls into similar limitations as distributing the BMI itself.</p>
-</li>
-<li>
-<p>The CMake team <a href="https://discourse.cmake.org/t/advice-on-c-20-modules-boost/10641/3">is working on enhancing this</a> to build BMIs according to the consumer&#8217;s target settings, but there is not an ETA for it.</p>
-</li>
-<li>
-<p>There is no clean way for consumers to define configuration macros affecting the library (like <code>ASIO_DISABLE_THREADS</code>). Such macros may affect initialization code contained in the newly created libraries (which doesn&#8217;t get rebuilt in the consumer), which leads to problems.</p>
-</li>
-<li>
-<p>Using this requires us to generate releases with CMake, rather than b2.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>As an alternative, we can consider rolling our own CMake machinery, extending <a href="https://anarthal.github.io/cppblog/modules#_consuming_boost_using_modules">what I proposed in my previous post</a>, following the mantra "all module code gets built by the user".</p>
-</div>
-<div class="paragraph">
-<p>Takeaway: <strong>CMake support is the most difficult part in this story</strong>. It requires either assuming big limitations or writing a considerable amount of CMake code.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_testing_implications">Testing implications</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>If we are to provide module code for Boost, we need to test its correctness before shipping it to users. Having a module build without errors is probably not enough. For instance, the Asio module builds, but attempting to use functionality hit by the <code>__try</code> MSVC bug causes build errors. Forgetting to export functions is another potential issue.</p>
-</div>
-<div class="paragraph">
-<p>The most reliable way is adapting the library&#8217;s test suite to conditionally use modules, in a similar way as we&#8217;d be adapting headers. This extra work should be able to detect most real problems.</p>
-</div>
-<div class="paragraph">
-<p>We&#8217;d also need a flow to verify that the generated CMake files can be consumed correctly, in a similar fashion to the "CMake consumer tests" we currently run in most libraries.</p>
-</div>
-<div class="paragraph">
-<p>Takeaway: <strong>modularizing requires additional work regarding testing</strong>.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_moving_forward">Moving forward</h2>
-<div class="sectionbody">
-<div class="ulist">
-<ul>
-<li>
-<p>We now know the benefits and implications of providing modular consumption for the current Boost project.</p>
-</li>
-<li>
-<p>We need to make a decision, as a community, whether we want to move this forward or leave it here. I won&#8217;t push it if the author community is against it.</p>
-</li>
-<li>
-<p>Users, we want your feedback - would this be something you&#8217;d use?</p>
-</li>
-<li>
-<p>I am up to perform this work, but requires authors to review and merge PRs, and probably some aid during design from the core Boost maintainers (those who know the infrastructure).</p>
-</li>
-</ul>
+<p>I don&#8217;t know which is the correct behavior, or whether this is implementation-defined. In any case, we can&#8217;t rely on clang&#8217;s behavior.</p>
 </div>
 </div>
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2024-04-18 09:03:58 UTC
+Last updated 2024-04-18 10:51:42 UTC
 </div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.18.3/highlight.min.js"></script>
