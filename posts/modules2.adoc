@@ -32,7 +32,6 @@ These results included the time required to build Asio and the standard library 
 |5 TU    |06.897s     |12.280s
 |6 TU    |07.331s     |13.197s
 |7 TU    |10.043s     |17.589s
-|1 TUerr |00.850s     |03.114s
 |===
 
 The modular version has considerable gains here, with a consistent ~45% reduction over the header version.
@@ -40,7 +39,7 @@ The modular version has considerable gains here, with a consistent ~45% reductio
 Benchmark conditions:
 
 * clang-19 (Linux)
-* Debug CMake build (note that the clean build measurements were performed in a Release build - debug seems more appropriate to measure what happens during local development).
+* Debug CMake build (note that the clean build measurements were performed in a Release build. Debug seems more appropriate to measure what happens during local development).
 * Building with 3 cores  to measure the effects of parallelism.
 * Modular builds use Asio and the standard library as modules. The time to build such modules is _not_ included in the benchmark.
 * The reported time includes the time elapsed by CMake re-scanning module dependencies for the affected translation units, which is usually not significative.
@@ -50,6 +49,7 @@ What if we hit build but had an error in a translation unit? The compiler won't 
 [cols="1,1"]
 |===
 | Build time (modules) | Build time (headers)
+
 |00.850s     |03.114s
 |===
 
@@ -69,7 +69,7 @@ Under MSVC, *mixing standard includes and imports is problematic*. This is true 
 
 This very much likely applies to our code, too - if we mix including and importing the same Boost libraries, we're likely going to run into trouble.
 
-*Exporting template specializations* in namespace `std` is also problematic. xref:#template-specs[Have a look at the appendix] if you're curious.
+*Exporting template specializations* in namespace `std` is also problematic. xref:#template-spec[Have a look at the appendix] if you're curious.
 
 With this in mind, Matt's approach with Boost.Math becomes the only viable one. This can be summarized as:
 
@@ -81,6 +81,7 @@ With this in mind, Matt's approach with Boost.Math becomes the only viable one. 
 See https://github.com/cppalliance/boost2/blob/master/libs/math/module/core.cxx[Matt's Boost.Math work] for an example.
 
 Takeaway 1: *modularizing a library requires some changes and extra maintenance effort*.
+
 Takeaway 2: *we should consume std and other Boost libraries via `import`*.
 
 [#macros]
@@ -88,7 +89,7 @@ Takeaway 2: *we should consume std and other Boost libraries via `import`*.
 
 Modules don't export macros. You need to use traditional include files to do that. Although the pass:[C++] world tries to flee from macros, the reality is that these are necessary at certain points. Concretely, in Boost's case:
 
-* Libraries like https://www.boost.org/doc/libs/1_85_0/libs/assert/doc/html/assert.html[Boost.Assert] or https://www.boost.org/doc/libs/1_85_0/libs/config/doc/html/index.html[Boost.Config] are almost just macros. I propose not creating any modules for these, but just including them as you'd do with `<assert.h>`. Some work is required to ifdef-out standard includes when present.
+* Libraries like https://www.boost.org/doc/libs/1_85_0/libs/assert/doc/html/assert.html[Boost.Assert] or https://www.boost.org/doc/libs/1_85_0/libs/config/doc/html/index.html[Boost.Config] are almost just macros. I propose not creating any modules for these, but just including them in the global module fragment, as you'd do with `<assert.h>`. Some work is required to `ifdef`-out standard includes when present.
 * Some libraries expose macros indicating the presence of platform-specific features. For instance, the `asio::local::stream_protocol` class is only present if `ASIO_HAS_LOCAL_SOCKETS` is defined. `if constexpr` is probably not suitable for this task (see https://godbolt.org/z/n7e5ceTxY[Godbolt 1] and https://godbolt.org/z/PdsE8cdKT[Godbolt 2]). We'd need to refactor `config.hpp` headers for such libraries to provide the relevant macros.
 * Other libraries expose a combination of macros and types, like Boost.Test. Non-trivial refactoring is required to make these work.
 
@@ -137,24 +138,24 @@ I've https://discourse.cmake.org/t/advice-on-c-20-modules-boost/10641[reached th
 While this seems the approach to follow, there are a number of caveats:
 
 * The `add_library` calls end up generating actual binary libraries, even when the original library was header-only. Why does this happen?
-  * When building a module translation unit, the compiler generates a BMI and an object file.
-  * The object file contains initialization code required by the module (https://discourse.cmake.org/t/header-only-libraries-and-c-20-modules/10680/3[module initializer symbols]). For instance, Asio requires initializing its error categories.
-  * When CMake "builds a module" in the consumer's project, it builds the BMI, and _not_ the object files.
-  * This means we now have `libboost_asio.a`, `libboost_beast.a` and all others, which get installed to the user's machine and linked into the user's final executable, which can create further compatibility problems.
+  ** When building a module translation unit, the compiler generates a BMI and an object file.
+  ** The object file contains initialization code required by the module (https://discourse.cmake.org/t/header-only-libraries-and-c-20-modules/10680/3[module initializer symbols]). For instance, Asio requires initializing its error categories.
+  ** When CMake "builds a module" in the consumer's project, it builds the BMI, and _not_ the object files.
+  ** This means we now have `libboost_asio.a`, `libboost_beast.a` and all others, which get installed to the user's machine and linked into the user's final executable, which can create further compatibility problems.
 * In the consumer's project, BMIs are built just once and use the original project's compiler options, not the user's.
-  * This falls into similar limitations as distributing the BMI itself.
-  * The CMake team https://discourse.cmake.org/t/advice-on-c-20-modules-boost/10641/3[is working on enhancing this] to build BMIs according to the consumer's target settings, but there is not an ETA for it.
+  ** This falls into similar limitations as distributing the BMI itself.
+  ** The CMake team https://discourse.cmake.org/t/advice-on-c-20-modules-boost/10641/3[is working on enhancing this] to build BMIs according to the consumer's target settings, but there is not an ETA for it.
 * There is no clean way for consumers to define configuration macros affecting the library (like `ASIO_DISABLE_THREADS`). Such macros may affect initialization code contained in the newly created libraries (which doesn't get rebuilt in the consumer), which leads to problems.
 * Using this requires us to generate releases with CMake, rather than b2.
 
-As an alternative, we can consider rolling our own CMake machinery, extending https://anarthal.github.io/cppblog/modules#_consuming_boost_using_modules[what I proposed in my previous post], following the mantra "all module code gets built by the user".
+As an alternative, we can consider rolling our own CMake machinery, extending https://anarthal.github.io/cppblog/modules#_consuming_boost_using_modules[what I proposed in my previous post], following the mantra "_all module code gets built by the user_".
 
 Takeaway: *CMake support is the most difficult part in this story*. It requires either assuming big limitations or writing a considerable amount of CMake code.
 
 [#testing]
 == Testing implications
 
-If we are to provide module code for Boost, we need to test its correctness before shipping it to users. Having a module build without errors is probably not enough. For instance, MSVC has https://developercommunity.visualstudio.com/t/Using-__try-in-an-inline-function-in-a-h/10186252[a bug] causing problems with SEH `__try`/`__catch` constructs.
+If we are to provide module code for Boost, we need to test its correctness before shipping it to users. Having a module build without errors is probably not enough. For instance, MSVC has https://developercommunity.visualstudio.com/t/Using-%5f%5ftry-in-an-inline-function-in-a-h/10186252[a bug] causing problems with SEH `__try`/`__except` constructs.
 
 The Asio module, which uses the aforementioned constructs, builds with a warning. The problem manifests only in the module's consumer, when using functionality that calls into code that uses SEH, in the form of a cryptic build error. Forgetting to export functions is another potential issue that won't be noticed while building.
 
