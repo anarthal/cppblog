@@ -7,6 +7,8 @@ This document contains my findings when playing with pass:[C++]20 modules and th
 
 The experiment is available in https://github.com/anarthal/boost-modules-bench[this repository].
 
+Update: https://anarthal.github.io/cppblog/modules2[a follow-up post] is now available.
+
 ## A mental model for modules
 
 Quick recap: modules are a pass:[C++]20 language-level construct that aims to provide better encapsulation and reduce build times. Modules add a new translation unit type: module units. Modules are built into an artifact called BMI.
@@ -105,9 +107,9 @@ Benefits are not as big as expected. Compiling with `-ftime-trace` with modules 
 * Each of the two modules take around 4s to build. This is spent including headers and parsing declarations.
 * Building server TUs take 6s in total: 2s in the compiler's frontend (performing instantiations) and 4s in the backend (performing optimizations).
 * The header version takes 9s. 3s are spent parsing headers, which is not present in the module version.
-* Rebuilds that only involve the compiler's frontend (common during local development) are significantly faster in the module version - from 4s to almost instant.
+* Rebuilds (as happen during local development) are significantly faster in the module version - see https://anarthal.github.io/cppblog/modules2#rebuilds[my follow-up post] for details.
 
-Although non-zero, I find the gains slightly disappointing. These may be bigger for bigger projects, debug builds or different libraries.
+Although non-zero, I find the gains slightly disappointing. These may be bigger for bigger projects, debug builds or different libraries. The benefits on re-builds may be enough for some users to consider modules, though.
 
 ## Consuming Boost using modules
 
