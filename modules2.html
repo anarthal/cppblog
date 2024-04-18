@@ -550,11 +550,6 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <td class="tableblock halign-left valign-top"><p class="tableblock">10.043s</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">17.589s</p></td>
 </tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">1 TUerr</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">00.850s</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">03.114s</p></td>
-</tr>
 </tbody>
 </table>
 <div class="paragraph">
@@ -569,7 +564,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <p>clang-19 (Linux)</p>
 </li>
 <li>
-<p>Debug CMake build (note that the clean build measurements were performed in a Release build - debug seems more appropriate to measure what happens during local development).</p>
+<p>Debug CMake build (note that the clean build measurements were performed in a Release build. Debug seems more appropriate to measure what happens during local development).</p>
 </li>
 <li>
 <p>Building with 3 cores  to measure the effects of parallelism.</p>
@@ -590,11 +585,13 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <col style="width: 50%;">
 <col style="width: 50%;">
 </colgroup>
-<tbody>
+<thead>
 <tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Build time (modules)</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Build time (headers)</p></td>
+<th class="tableblock halign-left valign-top">Build time (modules)</th>
+<th class="tableblock halign-left valign-top">Build time (headers)</th>
 </tr>
+</thead>
+<tbody>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">00.850s</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">03.114s</p></td>
@@ -632,7 +629,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <p>This very much likely applies to our code, too - if we mix including and importing the same Boost libraries, we&#8217;re likely going to run into trouble.</p>
 </div>
 <div class="paragraph">
-<p><strong>Exporting template specializations</strong> in namespace <code>std</code> is also problematic. <a href="#template-specs">Have a look at the appendix</a> if you&#8217;re curious.</p>
+<p><strong>Exporting template specializations</strong> in namespace <code>std</code> is also problematic. <a href="#template-spec">Have a look at the appendix</a> if you&#8217;re curious.</p>
 </div>
 <div class="paragraph">
 <p>With this in mind, Matt&#8217;s approach with Boost.Math becomes the only viable one. This can be summarized as:</p>
@@ -657,8 +654,10 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <p>See <a href="https://github.com/cppalliance/boost2/blob/master/libs/math/module/core.cxx">Matt&#8217;s Boost.Math work</a> for an example.</p>
 </div>
 <div class="paragraph">
-<p>Takeaway 1: <strong>modularizing a library requires some changes and extra maintenance effort</strong>.
-Takeaway 2: <strong>we should consume std and other Boost libraries via <code>import</code></strong>.</p>
+<p>Takeaway 1: <strong>modularizing a library requires some changes and extra maintenance effort</strong>.</p>
+</div>
+<div class="paragraph">
+<p>Takeaway 2: <strong>we should consume std and other Boost libraries via <code>import</code></strong>.</p>
 </div>
 </div>
 </div>
@@ -671,7 +670,7 @@ Takeaway 2: <strong>we should consume std and other Boost libraries via <code>im
 <div class="ulist">
 <ul>
 <li>
-<p>Libraries like <a href="https://www.boost.org/doc/libs/1_85_0/libs/assert/doc/html/assert.html">Boost.Assert</a> or <a href="https://www.boost.org/doc/libs/1_85_0/libs/config/doc/html/index.html">Boost.Config</a> are almost just macros. I propose not creating any modules for these, but just including them as you&#8217;d do with <code>&lt;assert.h&gt;</code>. Some work is required to ifdef-out standard includes when present.</p>
+<p>Libraries like <a href="https://www.boost.org/doc/libs/1_85_0/libs/assert/doc/html/assert.html">Boost.Assert</a> or <a href="https://www.boost.org/doc/libs/1_85_0/libs/config/doc/html/index.html">Boost.Config</a> are almost just macros. I propose not creating any modules for these, but just including them in the global module fragment, as you&#8217;d do with <code>&lt;assert.h&gt;</code>. Some work is required to <code>ifdef</code>-out standard includes when present.</p>
 </li>
 <li>
 <p>Some libraries expose macros indicating the presence of platform-specific features. For instance, the <code>asio::local::stream_protocol</code> class is only present if <code>ASIO_HAS_LOCAL_SOCKETS</code> is defined. <code>if constexpr</code> is probably not suitable for this task (see <a href="https://godbolt.org/z/n7e5ceTxY">Godbolt 1</a> and <a href="https://godbolt.org/z/PdsE8cdKT">Godbolt 2</a>). We&#8217;d need to refactor <code>config.hpp</code> headers for such libraries to provide the relevant macros.</p>
@@ -777,7 +776,8 @@ Takeaway 2: <strong>we should consume std and other Boost libraries via <code>im
 <ul>
 <li>
 <p>The <code>add_library</code> calls end up generating actual binary libraries, even when the original library was header-only. Why does this happen?</p>
-</li>
+<div class="ulist">
+<ul>
 <li>
 <p>When building a module translation unit, the compiler generates a BMI and an object file.</p>
 </li>
@@ -790,14 +790,21 @@ Takeaway 2: <strong>we should consume std and other Boost libraries via <code>im
 <li>
 <p>This means we now have <code>libboost_asio.a</code>, <code>libboost_beast.a</code> and all others, which get installed to the user&#8217;s machine and linked into the user&#8217;s final executable, which can create further compatibility problems.</p>
 </li>
+</ul>
+</div>
+</li>
 <li>
 <p>In the consumer&#8217;s project, BMIs are built just once and use the original project&#8217;s compiler options, not the user&#8217;s.</p>
-</li>
+<div class="ulist">
+<ul>
 <li>
 <p>This falls into similar limitations as distributing the BMI itself.</p>
 </li>
 <li>
 <p>The CMake team <a href="https://discourse.cmake.org/t/advice-on-c-20-modules-boost/10641/3">is working on enhancing this</a> to build BMIs according to the consumer&#8217;s target settings, but there is not an ETA for it.</p>
+</li>
+</ul>
+</div>
 </li>
 <li>
 <p>There is no clean way for consumers to define configuration macros affecting the library (like <code>ASIO_DISABLE_THREADS</code>). Such macros may affect initialization code contained in the newly created libraries (which doesn&#8217;t get rebuilt in the consumer), which leads to problems.</p>
@@ -808,7 +815,7 @@ Takeaway 2: <strong>we should consume std and other Boost libraries via <code>im
 </ul>
 </div>
 <div class="paragraph">
-<p>As an alternative, we can consider rolling our own CMake machinery, extending <a href="https://anarthal.github.io/cppblog/modules#_consuming_boost_using_modules">what I proposed in my previous post</a>, following the mantra "all module code gets built by the user".</p>
+<p>As an alternative, we can consider rolling our own CMake machinery, extending <a href="https://anarthal.github.io/cppblog/modules#" class="bare">https://anarthal.github.io/cppblog/modules#</a><em>consuming_boost_using_modules[what I proposed in my previous post], following the mantra "_all module code gets built by the user</em>".</p>
 </div>
 <div class="paragraph">
 <p>Takeaway: <strong>CMake support is the most difficult part in this story</strong>. It requires either assuming big limitations or writing a considerable amount of CMake code.</p>
@@ -819,7 +826,7 @@ Takeaway 2: <strong>we should consume std and other Boost libraries via <code>im
 <h2 id="testing">Testing implications</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>If we are to provide module code for Boost, we need to test its correctness before shipping it to users. Having a module build without errors is probably not enough. For instance, MSVC has <a href="https://developercommunity.visualstudio.com/t/Using-" class="bare">https://developercommunity.visualstudio.com/t/Using-</a><em>try-in-an-inline-function-in-a-h/10186252[a bug] causing problems with SEH <code></em>try</code>/<code>__catch</code> constructs.</p>
+<p>If we are to provide module code for Boost, we need to test its correctness before shipping it to users. Having a module build without errors is probably not enough. For instance, MSVC has <a href="https://developercommunity.visualstudio.com/t/Using-%5f%5ftry-in-an-inline-function-in-a-h/10186252">a bug</a> causing problems with SEH <code><em>try</code>/<code></em>except</code> constructs.</p>
 </div>
 <div class="paragraph">
 <p>The Asio module, which uses the aforementioned constructs, builds with a warning. The problem manifests only in the module&#8217;s consumer, when using functionality that calls into code that uses SEH, in the form of a cryptic build error. Forgetting to export functions is another potential issue that won&#8217;t be noticed while building.</p>
@@ -914,7 +921,7 @@ static_assert(std::is_error_code_enum&lt;asio::error::basic_errors&gt;::value);<
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2024-04-18 10:51:42 UTC
+Last updated 2024-04-18 11:02:51 UTC
 </div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.18.3/highlight.min.js"></script>

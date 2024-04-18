@@ -466,6 +466,9 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div class="paragraph">
 <p>The experiment is available in <a href="https://github.com/anarthal/boost-modules-bench">this repository</a>.</p>
 </div>
+<div class="paragraph">
+<p>Update: <a href="https://anarthal.github.io/cppblog/modules2">a follow-up post</a> is now available.</p>
+</div>
 </div>
 </div>
 <div class="sect1">
@@ -691,12 +694,12 @@ export using asio::any_io_executor;
 <p>The header version takes 9s. 3s are spent parsing headers, which is not present in the module version.</p>
 </li>
 <li>
-<p>Rebuilds that only involve the compiler&#8217;s frontend (common during local development) are significantly faster in the module version - from 4s to almost instant.</p>
+<p>Rebuilds (as happen during local development) are significantly faster in the module version - see <a href="https://anarthal.github.io/cppblog/modules2#rebuilds">my follow-up post</a> for details.</p>
 </li>
 </ul>
 </div>
 <div class="paragraph">
-<p>Although non-zero, I find the gains slightly disappointing. These may be bigger for bigger projects, debug builds or different libraries.</p>
+<p>Although non-zero, I find the gains slightly disappointing. These may be bigger for bigger projects, debug builds or different libraries. The benefits on re-builds may be enough for some users to consider modules, though.</p>
 </div>
 </div>
 </div>
@@ -772,7 +775,7 @@ endfunction()</code></pre>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2024-04-18 10:51:42 UTC
+Last updated 2024-04-18 11:02:51 UTC
 </div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.18.3/highlight.min.js"></script>
