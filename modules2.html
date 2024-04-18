@@ -459,12 +459,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </ul>
 </li>
 <li><a href="#_compiled_libraries">Compiled libraries</a></li>
-<li><a href="#_cmake">CMake</a>
-<ul class="sectlevel2">
-<li><a href="#_using_imported_module_targets">Using IMPORTED module targets</a></li>
-</ul>
-</li>
-<li><a href="#_testing_the_implementation">Testing the implementation</a></li>
+<li><a href="#_cmake_the_tricky_part">CMake: the tricky part</a></li>
+<li><a href="#_testing_implications">Testing implications</a></li>
 <li><a href="#_moving_forward">Moving forward</a></li>
 </ul>
 </div>
@@ -801,72 +797,86 @@ static_assert(std::is_error_code_enum&lt;asio::error::basic_errors&gt;::value);<
 </div>
 </div>
 <div class="sect1">
-<h2 id="_cmake">CMake</h2>
+<h2 id="_cmake_the_tricky_part">CMake: the tricky part</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>My previous post proposed providing <a href="https://anarthal.github.io/cppblog/modules#_consuming_boost_using_modules">a CMake function</a> to our users to build Boost modules. This works fine for modules without dependencies, but falls short if we internally consume Boost libraries using <code>import</code>.</p>
+<p>As I mentioned in my previous post, we need to provide a way for our users to consume our modules, probably using CMake. The <a href="https://anarthal.github.io/cppblog/modules#_consuming_boost_using_modules">simple approach</a> I proposed in my previous post falls short for modules with many dependencies. So let&#8217;s consider our options.</p>
 </div>
-<div class="sect2">
-<h3 id="_using_imported_module_targets">Using IMPORTED module targets</h3>
 <div class="paragraph">
-<p>I&#8217;ve <a href="https://discourse.cmake.org/t/advice-on-c-20-modules-boost/10641">reached the CMake team for help</a>. Their recommended method is to build</p>
+<p>I&#8217;ve <a href="https://discourse.cmake.org/t/advice-on-c-20-modules-boost/10641">reached the CMake team for help</a>. Their recommended method is:</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>Problematic: when a user needs to consume a library using <code>import boost.beast</code>, it needs to build the Beast module, plus all its modular dependencies, which may be many. This assumes one module per Boost library (roughly speaking). Just providing the module code doesn&#8217;t help the user, as building it would require tracking dependency chains they don&#8217;t care about.</p>
+<p>As part of the Boost build, create libraries with the module code. This is, call <code>add_library</code> and <code>target_sources</code> once per Boost library.</p>
 </li>
 <li>
-<p>Revisiting imported targets for modules in CMake: they build once in the source project when they export, then in the target project when they are imported. Together with dependencies. This is a step in the correct direction, but currently just use the same settings used by the source project, and don&#8217;t take the consumer&#8217;s options in consideration. Result: very high chance of incompatible BMIs.</p>
+<p>Install the generated libraries, include files, and module files following the usual CMake install practice. This ends up creating packages the user can consume via <code>find_package</code>, resulting in <code>IMPORTED</code> targets with some special properties signaling the presence of modules (see TODO: link <code>IMPORTED_CXX_MODULES_COMPILE_DEFINITIONS</code>).</p>
 </li>
 <li>
-<p>I&#8217;ve reached the CMake team for help. They plan on extending the modules as imported targets to partially cover this, and building modules (and dependents) according to the consumer&#8217;s configuration. But this doesn&#8217;t have an ETA - probably this year.</p>
-</li>
-<li>
-<p>The solution doesn&#8217;t take into account possible configuration macros we offer - take ASIO_DISABLE_THREADS (or one of the hundred other option macros) as example.</p>
-</li>
-<li>
-<p>Workaround: a user may set configuration macros by setting the <code>IMPORTED_CXX_MODULES_COMPILE_DEFINITIONS</code> definitions on the imported module target. For instance:</p>
+<p>The consumer calls <code>find_package</code> and consumes the module via <code>target_link_libraries</code>. This generates BMIs in the consumer&#8217;s project for the required modules and their dependencies.</p>
 </li>
 </ul>
 </div>
 <div class="paragraph">
-<p>set_property(TARGET asio APPEND PROPERTY IMPORTED_CXX_MODULES_COMPILE_DEFINITIONS ASIO_DISABLE_THREADS)</p>
-</div>
-<div class="paragraph">
-<p>But note that this allows a user to build a single version of our modules. If they need different configurations in the same project, then they&#8217;re fucked up. On the bright side, this may help prevent ODR violations.</p>
+<p>While this seems the approach to follow, there are a number of caveats:</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>As an alternative, we can write CMake machinery, equivalent to the function in the previous post (TODO: link), which knows about our dependency chains and adds the required modules on demand. This is more flexible, but also much much more work, and more clunky for users (a probably small use case impacts the usability of a bigger one).</p>
+<p>The <code>add_library</code> calls end up generating actual binary libraries, even when the original library was header-only. Why does this happen?</p>
 </li>
 <li>
-<p>When relying on imported targets, CMake requires the modules to be packaged as a library. This is a dummy library containing an object file that never gets used - see <a href="https://discourse.cmake.org/t/header-only-libraries-and-c-20-modules/10680" class="bare">https://discourse.cmake.org/t/header-only-libraries-and-c-20-modules/10680</a>. This can be circumvented if we write functions ourselves by using an OBJECT library.</p>
+<p>When building a module translation unit, the compiler generates a BMI and an object file.</p>
+</li>
+<li>
+<p>The object file contains initialization code required by the module (<a href="https://discourse.cmake.org/t/header-only-libraries-and-c-20-modules/10680/3">module initializer symbols</a>). For instance, Asio requires initializing its error categories.</p>
+</li>
+<li>
+<p>When CMake "builds a module" in the consumer&#8217;s project, it builds the BMI, and <em>not</em> the object files.</p>
+</li>
+<li>
+<p>This means we now have <code>libboost_asio.a</code>, <code>libboost_beast.a</code> and all others, which get installed to the user&#8217;s machine and linked into the user&#8217;s final executable, which can create further compatibility problems.</p>
+</li>
+<li>
+<p>In the consumer&#8217;s project, BMIs are built just once and use the original project&#8217;s compiler options, not the user&#8217;s.</p>
+</li>
+<li>
+<p>This falls into similar limitations as distributing the BMI itself.</p>
+</li>
+<li>
+<p>The CMake team <a href="https://discourse.cmake.org/t/advice-on-c-20-modules-boost/10641/3">is working on enhancing this</a> to build BMIs according to the consumer&#8217;s target settings, but there is not an ETA for it.</p>
+</li>
+<li>
+<p>There is no clean way for consumers to define configuration macros affecting the library (like <code>ASIO_DISABLE_THREADS</code>). Such macros may affect initialization code contained in the newly created libraries (which doesn&#8217;t get rebuilt in the consumer), which leads to problems.</p>
+</li>
+<li>
+<p>Using this requires us to generate releases with CMake, rather than b2.</p>
 </li>
 </ul>
 </div>
+<div class="paragraph">
+<p>As an alternative, we can consider rolling our own CMake machinery, extending <a href="https://anarthal.github.io/cppblog/modules#_consuming_boost_using_modules">what I proposed in my previous post</a>, following the mantra "all module code gets built by the user".</p>
+</div>
+<div class="paragraph">
+<p>Takeaway: <strong>CMake support is the most difficult part in this story</strong>. It requires either assuming big limitations or writing a considerable amount of CMake code.</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_testing_the_implementation">Testing the implementation</h2>
+<h2 id="_testing_implications">Testing implications</h2>
 <div class="sectionbody">
-<div class="ulist">
-<ul>
-<li>
-<p>If we are to provide module code for Boost, we need a way to test its correctness before shipping it to users.</p>
-</li>
-<li>
-<p>"The module builds" is not a strong enough check. Asio builds but is inherently flawed on MSVC because __try. You may forget to export public functions.</p>
-</li>
-<li>
-<p>The most reliable way is porting the library&#8217;s test suite to use modules, in a similar way as we&#8217;re proposing headers. Extra work, but should be able to detect real problems. This would be called from the CMake build when using some option, or from the B2 build if B2 finally implements module support.</p>
-</li>
-<li>
-<p>We&#8217;d also need a flow to verify the generated CMake files include correct module support, with all dependencies correctly set. This would be similar to the "CMake consumer tests" we currently have in most libraries.</p>
-</li>
-</ul>
+<div class="paragraph">
+<p>If we are to provide module code for Boost, we need to test its correctness before shipping it to users. Having a module build without errors is probably not enough. For instance, the Asio module builds, but attempting to use functionality hit by the <code>__try</code> MSVC bug causes build errors. Forgetting to export functions is another potential issue.</p>
+</div>
+<div class="paragraph">
+<p>The most reliable way is adapting the library&#8217;s test suite to conditionally use modules, in a similar way as we&#8217;d be adapting headers. This extra work should be able to detect most real problems.</p>
+</div>
+<div class="paragraph">
+<p>We&#8217;d also need a flow to verify that the generated CMake files can be consumed correctly, in a similar fashion to the "CMake consumer tests" we currently run in most libraries.</p>
+</div>
+<div class="paragraph">
+<p>Takeaway: <strong>modularizing requires additional work regarding testing</strong>.</p>
 </div>
 </div>
 </div>
@@ -894,7 +904,7 @@ static_assert(std::is_error_code_enum&lt;asio::error::basic_errors&gt;::value);<
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2024-04-18 08:03:48 UTC
+Last updated 2024-04-18 09:03:58 UTC
 </div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.18.3/highlight.min.js"></script>
