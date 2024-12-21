@@ -148,7 +148,7 @@ While this seems the approach to follow, there are a number of caveats:
 * There is no clean way for consumers to define configuration macros affecting the library (like `ASIO_DISABLE_THREADS`). Such macros may affect initialization code contained in the newly created libraries (which doesn't get rebuilt in the consumer), which leads to problems.
 * Using this requires us to generate releases with CMake, rather than b2.
 
-As an alternative, we can consider rolling our own CMake machinery, extending https://anarthal.github.io/cppblog/modules#_consuming_boost_using_modules[what I proposed in my previous post], following the mantra "_all module code gets built by the user_".
+As an alternative, we can consider rolling our own CMake machinery, extending https://anarthal.github.io/cppblog/modules#\_consuming_boost_using_modules[what I proposed in my previous post], following the mantra "__all module code gets built by the user__".
 
 Takeaway: *CMake support is the most difficult part in this story*. It requires either assuming big limitations or writing a considerable amount of CMake code.
 
