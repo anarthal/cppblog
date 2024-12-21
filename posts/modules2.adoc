@@ -69,7 +69,7 @@ Under MSVC, *mixing standard includes and imports is problematic*. This is true 
 
 This very much likely applies to our code, too - if we mix including and importing the same Boost libraries, we're likely going to run into trouble.
 
-*Exporting template specializations* in namespace `std` is also problematic. xref:#template-spec[Have a look at the appendix] if you're curious.
+*Template specializations* in namespace `std` are also problematic. xref:#template-spec[Have a look at the appendix] if you're curious.
 
 With this in mind, Matt's approach with Boost.Math becomes the only viable one. This can be summarized as:
 
@@ -175,9 +175,9 @@ But before this, we (Boost maintainers) should make a decision, as a community: 
 *Boost users - we'd also like to hear from you*. Would you use our modules in your codebase if we decide to provide them?
 
 [#template-spec]
-== Appendix: exporting template specializations
+== Appendix: template specializations
 
-Consider this code in the Asio library:
+Consider this piece of code in the Asio library:
 
 [source,cpp]
 ----
@@ -218,7 +218,7 @@ import std;
 static_assert(std::is_error_code_enum<asio::error::basic_errors>::value);
 ----
 
-* Under clang, the assertion succeeds, as the template specialization gets exported from the `asio` module.
+* Under clang, the assertion succeeds. The `import asio` statement makes the template specialization reachable.
 * Under MSVC, the assertion fails. Apparently, the specialization is not considered to be https://eel.is/c++draft/module.global.frag[decl-reachable] from the module purview and thus discarded.
 
-I don't know which is the correct behavior, or whether this is implementation-defined. In any case, we can't rely on clang's behavior.
+As pointed out by https://github.com/opensdh[@opensdh], this seems to be https://github.com/cplusplus/CWG/issues/655[a defect in the standard], so we can expect this behavior to change in the future, possibly matching clang's. See https://github.com/anarthal/cppblog/issues/1[this GitHub issue] for @opensdh's explanation.

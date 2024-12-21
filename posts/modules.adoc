@@ -70,8 +70,8 @@ export using asio::any_io_executor;
 
 There are a number of caveats with this approach though:
 
-* `constexpr` variables need to be `inline` to be exported. This is not the case in most libraries, although it should be. This requires submitting PRs to libraries.
-* Some libraries define template specializations in other namespaces, like `std`. These can probably not be exported with this approach, and would require additional work.
+* `constexpr` variables need to be `inline` to be exported. This is not the case in most libraries, although it should be. This requires submitting PRs to libraries. As mentioned by https://github.com/opensdh[@opensdh], there is https://open-std.org/jtc1/sc22/wg21/docs/papers/2023/p2808r0.html[a proposal] to make this easier.
+* Some libraries define template specializations in other namespaces, like `std`. With the current language rules, these cause trouble when employing `export using`. See https://anarthal.github.io/cppblog/modules2#template-spec[this section on the follow-up article] for more info about this topic.
 * Making a definition available using `import` in some TUs and `#include` in others seems to work when employing the `export using` technique, but may cause ODR violations otherwise, as pointed by Peter Dimov. This is troublesome considering the above point.
 
 ## Measuring build-time benefits
