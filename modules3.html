@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="generator" content="Asciidoctor 2.0.20">
 <meta name="author" content="Rubén Pérez (@anarthal)">
-<title>C++20 modules and Boost: deep dive</title>
+<title>C++20 modules and Boost: a prototype</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700">
 <style>
 /*! Asciidoctor default stylesheet | MIT License | https://asciidoctor.org */
@@ -437,21 +437,26 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </head>
 <body class="article toc2 toc-left">
 <div id="header">
-<h1>C++20 modules and Boost: deep dive</h1>
+<h1>C++20 modules and Boost: a prototype</h1>
 <div class="details">
 <span id="author" class="author">Rubén Pérez (@anarthal)</span><br>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
 <ul class="sectlevel1">
-<li><a href="#rebuilds">Re-build time benefits</a></li>
-<li><a href="#modularizing">Modularizing a library requires adapting it</a></li>
-<li><a href="#macros">Exporting macros: a necessary evil</a></li>
-<li><a href="#compiled">Compiled libraries</a></li>
-<li><a href="#cmake">CMake: the tricky part</a></li>
-<li><a href="#testing">Testing implications</a></li>
-<li><a href="#decision">Moving forward</a></li>
-<li><a href="#template-spec">Appendix: template specializations</a></li>
+<li><a href="#_high_level_overview">High-level overview</a></li>
+<li><a href="#_supported_compilers_and_tools">Supported compilers and tools</a></li>
+<li><a href="#_implementation">Implementation</a>
+<ul class="sectlevel2">
+<li><a href="#_cmake">CMake</a></li>
+<li><a href="#_mixing_includes_and_imports">Mixing includes and imports</a></li>
+<li><a href="#_writing_module_interface_units_boost_mp11_cppm">Writing module interface units (boost_mp11.cppm)</a></li>
+<li><a href="#_compiled_libraries">Compiled libraries</a></li>
+<li><a href="#_continuous_integration">Continuous Integration</a></li>
+</ul>
+</li>
+<li><a href="#bench">Benchmarking</a></li>
+<li><a href="#_next_steps">Next steps</a></li>
 </ul>
 </div>
 </div>
@@ -459,460 +464,311 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div id="preamble">
 <div class="sectionbody">
 <div class="paragraph">
-<p>This document is a follow-up to <a href="https://anarthal.github.io/cppblog/modules">my previous post on C++20 modules and Boost</a>. Following the generated debates, we will cover:</p>
+<p>I&#8217;ve written a small proof-of-concept that allows Boost to be consumed as C++20 modules. This article explains the design decisions I&#8217;ve made and some caveats I&#8217;ve found.</p>
+</div>
+<div class="paragraph">
+<p>This prototype includes changes to the following Boost repositories:</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p><a href="#rebuilds">A benchmark</a> about compile-times when re-building code consuming modules.</p>
+<p>Boost.Mp11 (proof-of-concept for header-only libraries) <a href="https://github.com/boostorg/mp11/pull/104" class="bare">https://github.com/boostorg/mp11/pull/104</a></p>
 </li>
 <li>
-<p><a href="#modularizing">Additional caveats</a> when modularizing a library.</p>
+<p>Boost.Charconv<sup class="footnote">[<a id="_footnoteref_1" class="footnote" href="#_footnotedef_1" title="View footnote.">1</a>]</sup> (proof-of-concept for compiled libraries): <a href="https://github.com/boostorg/charconv/pull/255" class="bare">https://github.com/boostorg/charconv/pull/255</a></p>
 </li>
 <li>
-<p><a href="#macros">How to handle macros</a>.</p>
+<p>Boost.Core (minimal subset to support test suites in the above two): <a href="https://github.com/anarthal/core/tree/feature/cxx20-modules" class="bare">https://github.com/anarthal/core/tree/feature/cxx20-modules</a></p>
 </li>
 <li>
-<p>A mental model for <a href="#compiled">Boost libraries with separate compilation</a>.</p>
+<p>Boost.Assert (minimal subset to support test suites in the above two): <a href="https://github.com/anarthal/assert/tree/feature/cxx20-modules" class="bare">https://github.com/anarthal/assert/tree/feature/cxx20-modules</a></p>
 </li>
 <li>
-<p>A more realistic <a href="#cmake">CMake approach</a>.</p>
+<p>Boost.ThrowException (minimal subset to support test suites in the above two): <a href="https://github.com/anarthal/throw_exception/tree/feature/cxx20-modules" class="bare">https://github.com/anarthal/throw_exception/tree/feature/cxx20-modules</a></p>
 </li>
 <li>
-<p><a href="#testing">Unit testing implications</a>.</p>
+<p>Boost.CMake (scripts to install modules with Boost): <a href="https://github.com/anarthal/boost-cmake/tree/feature/cxx20-modules" class="bare">https://github.com/anarthal/boost-cmake/tree/feature/cxx20-modules</a></p>
 </li>
 </ul>
-</div>
-<div class="paragraph">
-<p>Reading <a href="https://anarthal.github.io/cppblog/modules">the previous post</a> is strongly recommended. With the information in this post, we (the Boost author community) should have enough information to <a href="#decision">make an informed decision about module support in Boost</a>.</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="rebuilds">Re-build time benefits</h2>
+<h2 id="_high_level_overview">High-level overview</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>In <a href="https://anarthal.github.io/cppblog/modules#_measuring_build_time_benefits">the previous post</a>, we benchmarked build times for an Asio-based server. We used the modular version of <code>libc++</code> and a modular standalone Asio prototype to measure build times, varying the number of translation units. We observed very small benefits, increasing with the number of TUs.</p>
+<p>Each Boost library gets its own C++20 module. For example, Boost.Mp11 can be consumed with <code>import boost.mp11</code>. Libraries that only export macros (like Boost.Config) don&#8217;t get a module.</p>
 </div>
 <div class="paragraph">
-<p>These results included the time required to build Asio and the standard library modules. This is what you&#8217;d encounter when doing a clean build in a CI system. But what benefits would we see during local development, where the Asio and <code>std</code> modules have already been built? Here are the results:</p>
-</div>
-<table class="tableblock frame-all grid-all stretch">
-<colgroup>
-<col style="width: 33.3333%;">
-<col style="width: 33.3333%;">
-<col style="width: 33.3334%;">
-</colgroup>
-<thead>
-<tr>
-<th class="tableblock halign-left valign-top">Number of re-built translation units</th>
-<th class="tableblock halign-left valign-top">Build time (modules)</th>
-<th class="tableblock halign-left valign-top">Build time (headers)</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">1 TU</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">02.584s</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">04.655s</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">2 TU</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">03.027s</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">05.593s</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">3 TU</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">03.703s</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">06.632s</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">4 TU</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">05.849s</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">11.198s</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">5 TU</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">06.897s</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">12.280s</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">6 TU</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">07.331s</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">13.197s</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">7 TU</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">10.043s</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">17.589s</p></td>
-</tr>
-</tbody>
-</table>
-<div class="paragraph">
-<p>The modular version has considerable gains here, with a consistent ~45% reduction over the header version.</p>
+<p>Changes are backwards compatible. Builds using headers will continue to work as usual. The prototype proposes using a "dual mode", where Boost might be consumed using includes or imports. The proposal includes changes to headers and tests to adapt them to C++20 modules using the preprocessor.</p>
 </div>
 <div class="paragraph">
-<p>Benchmark conditions:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>clang-19 (Linux)</p>
-</li>
-<li>
-<p>Debug CMake build (note that the clean build measurements were performed in a Release build. Debug seems more appropriate to measure what happens during local development).</p>
-</li>
-<li>
-<p>Building with 3 cores  to measure the effects of parallelism.</p>
-</li>
-<li>
-<p>Modular builds use Asio and the standard library as modules. The time to build such modules is <em>not</em> included in the benchmark.</p>
-</li>
-<li>
-<p>The reported time includes the time elapsed by CMake re-scanning module dependencies for the affected translation units, which is usually not significative.</p>
-</li>
-</ul>
+<p>I&#8217;ve taken a bottom-up approach, modularizing libraries in dependency order. The standard library is consumed with <code>import std</code> in all the proposed modules. This is the best approach to <strong>reduce build times</strong>, one of the main incentives to prefer imports over includes. If this is your case, you might find <a href="#bench">the benchmark on the Boost.Mp11 test suite</a> interesting.</p>
 </div>
 <div class="paragraph">
-<p>What if we hit build but had an error in a translation unit? The compiler won&#8217;t be able to perform any code generation, so the results are even better:</p>
-</div>
-<table class="tableblock frame-all grid-all stretch">
-<colgroup>
-<col style="width: 50%;">
-<col style="width: 50%;">
-</colgroup>
-<thead>
-<tr>
-<th class="tableblock halign-left valign-top">Build time (modules)</th>
-<th class="tableblock halign-left valign-top">Build time (headers)</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">00.850s</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">03.114s</p></td>
-</tr>
-</tbody>
-</table>
-<div class="paragraph">
-<p>This means that errors are reported almost instantly. The measurement was taken by attempting to call an existing function with incorrect arguments at the end of the translation unit.</p>
+<p>C++20 Boost modules are built using our regular Boost.CMake infrastructure. Users select whether to build Boost in C++20 module mode setting the <code>-DBOOST_USE_MODULES=1</code> option when running CMake. This defines the required C++ macros and installs the required module interfaces.</p>
 </div>
 <div class="paragraph">
-<p>Takeaway: <strong>modules can make the local development feedback loop faster</strong>.</p>
+<p>I&#8217;ve also modularized Boost.Mp11 and Boost.Charconv test suites. When C++20 modules builds are enabled, tests consume the libraries using <code>import</code> rather than <code>include</code>, verifying that everything works. I&#8217;ve also included CI jobs to cover these settings.</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="modularizing">Modularizing a library requires adapting it</h2>
+<h2 id="_supported_compilers_and_tools">Supported compilers and tools</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>The promising <code>export using</code> technique I talked about in <a href="https://anarthal.github.io/cppblog/modules#_how_to_modularize_a_library">my previous post</a> is unfortunately limited to clang.</p>
-</div>
-<div class="paragraph">
-<p>Under MSVC, <strong>mixing standard includes and imports is problematic</strong>. This is true even if the mix happens in different translation units, as long as they interact via <code>import</code>. It shouldn&#8217;t be the case, according to the standard, but the fix may take time to arrive. For instance, this is problematic:</p>
+<p>The tooling is still a bit experimental. CIs run the following tools:</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>We modularize the Asio library non-intrusively, using the approach described above. As a result, the <code>asio</code> module consumes the standard library via <code>#include</code>.</p>
+<p>MSVC 19.42.34435.0.</p>
 </li>
 <li>
-<p>A user consumes both <code>asio</code> and the <code>std</code> modules via <code>import</code>.</p>
+<p>clang-19 with libc++.</p>
+</li>
+<li>
+<p>CMake 3.30 and higher. The proposal uses CMake&#8217;s experimental support for building the standard library module.</p>
+</li>
+<li>
+<p>Ninja 1.11. In particular, CMake under Windows doesn&#8217;t support the usual Visual Studio generators when building modules.</p>
 </li>
 </ul>
-</div>
-<div class="paragraph">
-<p>This very much likely applies to our code, too - if we mix including and importing the same Boost libraries, we&#8217;re likely going to run into trouble.</p>
-</div>
-<div class="paragraph">
-<p><strong>Template specializations</strong> in namespace <code>std</code> are also problematic. <a href="#template-spec">Have a look at the appendix</a> if you&#8217;re curious.</p>
-</div>
-<div class="paragraph">
-<p>With this in mind, Matt&#8217;s approach with Boost.Math becomes the only viable one. This can be summarized as:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Create a <code>BOOST_XXX_MODULE_EXPORT</code> macro, defined to <code>export</code> if we&#8217;re doing modules, empty otherwise.</p>
-</li>
-<li>
-<p>Annotate all public entities in our headers with the aforementioned macro.</p>
-</li>
-<li>
-<p>Ifdef-out all third-party includes from our headers if we&#8217;re doing modules (including standard library and other Boost library includes) - these will be made available with <code>import</code>.</p>
-</li>
-<li>
-<p>Create a <code>module.cxx</code> source file that brings all headers in.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>See <a href="https://github.com/cppalliance/boost2/blob/master/libs/math/module/core.cxx">Matt&#8217;s Boost.Math work</a> for an example.</p>
-</div>
-<div class="paragraph">
-<p>Takeaway 1: <strong>modularizing a library requires some changes and extra maintenance effort</strong>.</p>
-</div>
-<div class="paragraph">
-<p>Takeaway 2: <strong>we should consume std and other Boost libraries via <code>import</code></strong>.</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="macros">Exporting macros: a necessary evil</h2>
+<h2 id="_implementation">Implementation</h2>
 <div class="sectionbody">
+<div class="sect2">
+<h3 id="_cmake">CMake</h3>
 <div class="paragraph">
-<p>Modules don&#8217;t export macros. You need to use traditional include files to do that. Although the C++ world tries to flee from macros, the reality is that these are necessary at certain points. Concretely, in Boost&#8217;s case:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Libraries like <a href="https://www.boost.org/doc/libs/1_85_0/libs/assert/doc/html/assert.html">Boost.Assert</a> or <a href="https://www.boost.org/doc/libs/1_85_0/libs/config/doc/html/index.html">Boost.Config</a> are almost just macros. I propose not creating any modules for these, but just including them in the global module fragment, as you&#8217;d do with <code>&lt;assert.h&gt;</code>. Some work is required to <code>ifdef</code>-out standard includes when present.</p>
-</li>
-<li>
-<p>Some libraries expose macros indicating the presence of platform-specific features. For instance, the <code>asio::local::stream_protocol</code> class is only present if <code>ASIO_HAS_LOCAL_SOCKETS</code> is defined. <code>if constexpr</code> is probably not suitable for this task (see <a href="https://godbolt.org/z/n7e5ceTxY">Godbolt 1</a> and <a href="https://godbolt.org/z/PdsE8cdKT">Godbolt 2</a>). We&#8217;d need to refactor <code>config.hpp</code> headers for such libraries to provide the relevant macros.</p>
-</li>
-<li>
-<p>Other libraries expose a combination of macros and types, like Boost.Test. Non-trivial refactoring is required to make these work.</p>
-</li>
-</ul>
+<p>Every library provides a module interface unit defining its exports. For instance, in Boost.Mp11, this file is <code>modules/boost_mp11.cppm</code>. It&#8217;s installed to <code>CMAKE_INSTALL_DATADIR</code>, which places it in <code>/usr/local/share/boost_mp11.cppm</code> by default.</p>
 </div>
 <div class="paragraph">
-<p>Note that using <code>#include &lt;version&gt;</code> looks compatible with <code>import std</code> on all platforms.</p>
+<p>Libraries that want to support C++20 module builds include conditional logic in their CMake to react to <code>BOOST_USE_MODULES</code>. For example, <a href="https://github.com/boostorg/mp11/pull/104/files#diff-1e7de1ae2d059d21e1dd75d5812d5a34b0222cef273b7c3a2af62eb747f9d20a:">this is what Boost.Mp11 would look like</a>. Libraries that don&#8217;t support C++20 module builds are built and installed as they are today.</p>
 </div>
 <div class="paragraph">
-<p>Takeaway: <strong>we can&#8217;t just ignore macros</strong>. Libraries need to export these as required</p>
+<p>In C++20 module builds, binary artifacts are generated even for previously header-only builds. For instance, the above CMake generates a <code>libboost_mp11.a</code> in Linux. In most cases, these libraries only contain <a href="https://clang.llvm.org/docs/StandardCPlusPlusModules.html#module-initializers:">module initializers</a>. I&#8217;ve made these libraries unconditionally static, to reduce overhead. They are installed along other compiled Boost libraries.</p>
 </div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="compiled">Compiled libraries</h2>
-<div class="sectionbody">
 <div class="paragraph">
-<p>We have two approaches for compiled libraries:</p>
+<p>The libraries can be consumed from CMake with <code>add_subdirectory</code> and <code>find_package</code>, as usual. However, due to <a href="https://discourse.cmake.org/t/advice-on-c-20-modules-boost/10641/9:">CMake current limitations</a>, the <code>find_package</code> workflow is more sensitive to build flags than with headers.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_mixing_includes_and_imports">Mixing includes and imports</h3>
+<div class="paragraph">
+<p>At the time of writing, standard library implementations support <strong>including</strong> standard headers <strong>first</strong>, then importing <code>std</code>. This is relevant because some standard library headers still need to be included for macros to be visible.</p>
+</div>
+<div class="paragraph">
+<p>I&#8217;ve tried to support the same in the proposed Boost implementation. This is required by unit tests that need access to entities not exported by the module (usually in the <code>detail</code>) namespace. To access these, the relevant <code>detail</code> header should be included before the corresponding <code>import</code>. <a href="https://github.com/boostorg/charconv/pull/255/files#diff-eed0db0ed99a211ac7d34de95f2a953e1e3ba234b419ce1726bc629e00e740cb">This Boost.Charconv test</a> is an example of this requirement.</p>
+</div>
+<div class="paragraph">
+<p>Additionally, libraries that need to export macros need <strong>macro headers</strong>. These should contain as few C++ entities as possible. For example, Boost.Core has a lightweight testing framework used in unit tests that relies on macros. The <code>boost.core</code> module exports the required C++ entities, and <a href="https://github.com/anarthal/core/blob/feature/cxx20-modules/include/boost/core/lightweight_test_macros.hpp:">a separate header</a> provides the macro. All tests use this functionality.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_writing_module_interface_units_boost_mp11_cppm">Writing module interface units (boost_mp11.cppm)</h3>
+<div class="paragraph">
+<p>Broadly, this requires two groups of code changes:</p>
 </div>
 <div class="olist arabic">
 <ol class="arabic">
 <li>
-<p>Adapt their implementation (<code>.cpp</code> files) so they are conditionally built and consumed using modules.</p>
+<p>Update the headers to #ifdef-out all dependencies, based on a macro that is defined in C++20 module builds.</p>
 </li>
 <li>
-<p>Keep their implementation files as they are, and provide modular code for the interface (as we&#8217;d do with header-only libraries).</p>
+<p>Mark C++ entities in the public interface as exported.</p>
 </li>
 </ol>
 </div>
 <div class="paragraph">
-<p>The second approach seems the most suitable one for us, since it&#8217;d make our modules compatible with the binary libraries we generate today. Our libraries would be built using <code>b2</code> as they are today, and would also be importable.</p>
-</div>
-<div class="paragraph">
-<p>How does <code>export</code> interact with <code>__declspec(dllexport)</code> and similar constructs? The following mental model may be useful:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Think of <code>export</code> a construct for the compiler, affecting declarations and definitions.</p>
-</li>
-<li>
-<p>Think of <code>__declspec(dllexport)</code> and friends as constructs for the linker, affecting symbols in object files.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>In a compiled library, you&#8217;d:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Mark as both <code>export</code> and <code>__declspec(dllexport)</code> compiled functions that should be visible by importers.</p>
-</li>
-<li>
-<p>Mark as <code>__declspec(dllexport)</code> compiled functions that are considered implementation details, and are not to be called by the end user.</p>
-</li>
-<li>
-<p>Mark as <code>export</code> inline functions and templates that may be called by the end user.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Modularizing compiled libraries is almost identical to doing so for header-only libraries (with some details). I&#8217;ve done <a href="https://github.com/anarthal/modules-playground/tree/master/charconv">a clang-based proof-of-concept</a> with Boost.Charconv.</p>
-</div>
-<div class="paragraph">
-<p>Note that this seems to work fine even if the library includes the standard library in its implementation. This makes sense because the library&#8217;s translation units are not seen by the compiler when importing, but only by the linker.</p>
-</div>
-<div class="paragraph">
-<p>Takeaway: <strong>we can probably treat compiled libraries in a similar way as header-only ones</strong>, regarding modular consumption.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="cmake">CMake: the tricky part</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>As I mentioned in my previous post, we need to provide a way for our users to consume our modules, probably using CMake. The <a href="https://anarthal.github.io/cppblog/modules#_consuming_boost_using_modules">simple approach</a> I proposed in my previous post falls short for modules with many dependencies. So let&#8217;s consider our options.</p>
-</div>
-<div class="paragraph">
-<p>I&#8217;ve <a href="https://discourse.cmake.org/t/advice-on-c-20-modules-boost/10641">reached the CMake team for help</a>. Their recommended method is:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>As part of the Boost build, create libraries with the module code. This is, call <code>add_library</code> and <code>target_sources</code> once per Boost library.</p>
-</li>
-<li>
-<p>Install the generated libraries, include files, and module files following the usual CMake install practice. This ends up creating packages the user can consume via <code>find_package</code>, resulting in <code>IMPORTED</code> targets with some special properties signaling the presence of modules (see <a href="https://cmake.org/cmake/help/latest/prop_tgt/IMPORTED_CXX_MODULES_COMPILE_DEFINITIONS.html"><code>IMPORTED_CXX_MODULES_COMPILE_DEFINITIONS</code></a>).</p>
-</li>
-<li>
-<p>The consumer calls <code>find_package</code> and consumes the module via <code>target_link_libraries</code>. This generates BMIs in the consumer&#8217;s project for the required modules and their dependencies.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>While this seems the approach to follow, there are a number of caveats:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>The <code>add_library</code> calls end up generating actual binary libraries, even when the original library was header-only. Why does this happen?</p>
-<div class="ulist">
-<ul>
-<li>
-<p>When building a module translation unit, the compiler generates a BMI and an object file.</p>
-</li>
-<li>
-<p>The object file contains initialization code required by the module (<a href="https://discourse.cmake.org/t/header-only-libraries-and-c-20-modules/10680/3">module initializer symbols</a>). For instance, Asio requires initializing its error categories.</p>
-</li>
-<li>
-<p>When CMake "builds a module" in the consumer&#8217;s project, it builds the BMI, and <em>not</em> the object files.</p>
-</li>
-<li>
-<p>This means we now have <code>libboost_asio.a</code>, <code>libboost_beast.a</code> and all others, which get installed to the user&#8217;s machine and linked into the user&#8217;s final executable, which can create further compatibility problems.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>In the consumer&#8217;s project, BMIs are built just once and use the original project&#8217;s compiler options, not the user&#8217;s.</p>
-<div class="ulist">
-<ul>
-<li>
-<p>This falls into similar limitations as distributing the BMI itself.</p>
-</li>
-<li>
-<p>The CMake team <a href="https://discourse.cmake.org/t/advice-on-c-20-modules-boost/10641/3">is working on enhancing this</a> to build BMIs according to the consumer&#8217;s target settings, but there is not an ETA for it.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>There is no clean way for consumers to define configuration macros affecting the library (like <code>ASIO_DISABLE_THREADS</code>). Such macros may affect initialization code contained in the newly created libraries (which doesn&#8217;t get rebuilt in the consumer), which leads to problems.</p>
-</li>
-<li>
-<p>Using this requires us to generate releases with CMake, rather than b2.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>As an alternative, we can consider rolling our own CMake machinery, extending <a href="https://anarthal.github.io/cppblog/modules#\_consuming_boost_using_modules">what I proposed in my previous post</a>, following the mantra "<em>all module code gets built by the user</em>".</p>
-</div>
-<div class="paragraph">
-<p>Takeaway: <strong>CMake support is the most difficult part in this story</strong>. It requires either assuming big limitations or writing a considerable amount of CMake code.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="testing">Testing implications</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>If we are to provide module code for Boost, we need to test its correctness before shipping it to users. Having a module build without errors is probably not enough. For instance, MSVC has <a href="https://developercommunity.visualstudio.com/t/Using-%5f%5ftry-in-an-inline-function-in-a-h/10186252">a bug</a> causing problems with SEH <code><em>try</code>/<code></em>except</code> constructs.</p>
-</div>
-<div class="paragraph">
-<p>The Asio module, which uses the aforementioned constructs, builds with a warning. The problem manifests only in the module&#8217;s consumer, when using functionality that calls into code that uses SEH, in the form of a cryptic build error. Forgetting to export functions is another potential issue that won&#8217;t be noticed while building.</p>
-</div>
-<div class="paragraph">
-<p>The most reliable way to test is adapting the library&#8217;s test suite to conditionally use modules, in a similar way as we&#8217;d be adapting headers. This extra work should be able to detect most real problems.</p>
-</div>
-<div class="paragraph">
-<p>We&#8217;d also need a flow to verify that the generated CMake files can be consumed correctly, in a similar fashion to the "CMake consumer tests" we currently run in most libraries.</p>
-</div>
-<div class="paragraph">
-<p>Takeaway: <strong>modularizing requires additional work regarding testing</strong>.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="decision">Moving forward</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>The next step would be to build a more realistic proof-of-concept that demonstrates the modularization process end-to-end. This includes modularizing a library, its dependencies, its tests, and writing any required CMake/b2 code. I think Boost.Url is a good candidate, as it&#8217;s compiled, has some header-only dependencies, and is actively maintained.</p>
-</div>
-<div class="paragraph">
-<p>But before this, we (Boost maintainers) should make a decision, as a community: <strong>do we want modules?</strong> do we want to assume the extra cost of supporting modules in our codebase? We roughly know the benefits and downsides. It doesn&#8217;t make sense to go forward if module-related PRs are going to be rejected.</p>
-</div>
-<div class="paragraph">
-<p><strong>Boost users - we&#8217;d also like to hear from you</strong>. Would you use our modules in your codebase if we decide to provide them?</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="template-spec">Appendix: template specializations</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Consider this piece of code in the Asio library:</p>
+<p>A possible strategy for point 2 is creating a <code>BOOST_MP11_MODULE_EXPORT</code> macro that expands to <code>export</code> in module builds, and otherwise to nothing. This is similar to what we do today to handle DLL exports today. Some code samples:</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">namespace std {
+<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">//
+// File: boost/mp11/list.hpp
+//
+#include &lt;boost/mp11/detail/config.hpp&gt; // Our own includes stay as they are
+#ifndef BOOST_USE_MODULES
+#include &lt;type_traits&gt; // Includes for dependencies are conditionally removed
+#endif
 
-template &lt;&gt; struct is_error_code_enum&lt;asio::error::basic_errors&gt;
+BOOST_MP11_MODULE_EXPORT // defined to export if BOOST_USE_MODULES is defined, to nothing otherwise
+template&lt;class... T&gt; struct mp_list
 {
-  static const bool value = true;
 };
 
-}</code></pre>
-</div>
-</div>
-<div class="paragraph">
-<p>If we attempt a non-intrusive approach like the following:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">// asio.cxx - defines how to build Asio as a module so it can be imported
+//
+// File: boost_mp11.cppm
+//
 module;
 
-#include &lt;asio.hpp&gt;
+// These headers are required because they define macros
+#include &lt;cassert&gt;
 
-export module asio;
+export module boost.mp11;
 
-namespace asio::error {
-export using asio::error::basic_errors;
-// ...
+import std;
+
+// extern C++ makes all the included entities attached to the global module.
+// If we forget to ifdef an include, this is supposed to make it less problematic
+extern "C++" {
+#include &lt;boost/mp11.hpp&gt;
 }</code></pre>
 </div>
 </div>
 <div class="paragraph">
-<p>What does the following client code see?</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">import asio;
-import std;
-
-static_assert(std::is_error_code_enum&lt;asio::error::basic_errors&gt;::value);</code></pre>
-</div>
+<p>While this works, it has some drawbacks:</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>Under clang, the assertion succeeds. The <code>import asio</code> statement makes the template specialization reachable.</p>
+<p>It doesn&#8217;t support mixing includes and imports in the tests. Under MSVC, entities declared in the purview can&#8217;t be re-declared outside of it, even when enclosed in <code>extern C++</code>. This is problematic for compiled libraries having several cpp files, too.</p>
 </li>
 <li>
-<p>Under MSVC, the assertion fails. Apparently, the specialization is not considered to be <a href="https://eel.is/c++draft/module.global.frag">decl-reachable</a> from the module purview and thus discarded.</p>
+<p>It issues compiler warnings, since include is only recommended in the global module fragment.</p>
+</li>
+<li>
+<p>Requires considerable code changes in headers when compared with alternatives.</p>
 </li>
 </ul>
 </div>
 <div class="paragraph">
-<p>As pointed out by <a href="https://github.com/opensdh">@opensdh</a>, this seems to be <a href="https://github.com/cplusplus/CWG/issues/655">a defect in the standard</a>, so we can expect this behavior to change in the future, possibly matching clang&#8217;s. See <a href="https://github.com/anarthal/cppblog/issues/1">this GitHub issue</a> for @opensdh&#8217;s explanation.</p>
+<p>The above strategy works fine for Boost.Mp11, but is inviable for Boost.Charconv. As an alternative, I&#8217;ve used the <code>export using</code> technique:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">//
+// File: boost/mp11/list.hpp
+//
+// Same strategy for includes as before
+#include &lt;boost/mp11/detail/config.hpp&gt;
+#ifndef BOOST_USE_MODULES
+#include &lt;type_traits&gt;
+#endif
+
+// No longer exported
+template&lt;class... T&gt; struct mp_list
+{
+};
+
+//
+// File: boost_mp11.cppm
+//
+module;
+
+// Includes and imports required by Boost.Mp11.
+// We can place these in a boost/mp11/detail/global_module_fragment.hpp,
+// so it can be used in tests
+#include &lt;cassert&gt;
+import std;
+
+// The library
+#include &lt;boost/mp11.hpp&gt;
+
+export module boost.mp11;
+
+// List all symbols we want to export
+export namespace boost::mp11 {
+using mp11::list;
+}</code></pre>
 </div>
 </div>
+<div class="paragraph">
+<p>When compared to the alternative, this technique:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Supports mixing includes and imports under all compilers.</p>
+</li>
+<li>
+<p>Doesn&#8217;t generate compiler warnings.</p>
+</li>
+<li>
+<p>Requires less code changes in headers.</p>
+</li>
+<li>
+<p>It hits two troublesome MSVC bugs:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Some templated type aliases, like <code>mp_size_t</code>, cause trouble in importers under some circumstances: <a href="https://developercommunity.visualstudio.com/t/MSVC-C20-modules:-export-using-templat/10826448:">see bug report</a>.</p>
+</li>
+<li>
+<p>Template specializations seem to always be discarded, even if they are decl-reachable: <a href="https://developercommunity.visualstudio.com/t/C20-modules:-specialzations-in-the-glo/10826499:">see bug report</a>.</p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>I&#8217;d suggest to go with this second option, once the MSVC teams either fixes or proposes workarounds for these problems.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_compiled_libraries">Compiled libraries</h3>
+<div class="paragraph">
+<p>As with header-only libraries, compiled libraries should also provide a <code>.cppm</code> file stating the functions exported by the module. For Charconv, I&#8217;ve converted <code>.cpp</code> files in module implementation units in module builds.</p>
+</div>
+<div class="paragraph">
+<p>In Windows, when shared libraries are enabled, a <a href="https://gitlab.kitware.com/cmake/cmake/-/issues/25539:">CMake limitation</a> makes module interfaces within the same project always build with <code>__declspec(dllexport)</code>. This has the effect of introducing an extra indirection when calling library functions. This limitation is expected to be lifted in the future.</p>
+</div>
+<div class="paragraph">
+<p>Note that module exports need not match with DLL exports. DLL exports define the library&#8217;s ABI, while module exports define its API.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_continuous_integration">Continuous Integration</h3>
+<div class="paragraph">
+<p>I&#8217;ve added workflows akin to the current CMake ones that verify that tests build and run, and that the <code>add_subdirectory</code> and <code>find_package</code> workflow work, for both compilers. For instance, <a href="https://github.com/boostorg/charconv/pull/255/files#diff-b803fcb7f17ed9235f1e5cb1fcd2f5d3b2838429d4368ae4c57ce4436577f03f:">this is what the Charconv new CI jobs would look like</a>.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="bench">Benchmarking</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Build performance gains are higher when lots of translation units consume the same library. Building the Boost.Mp11 test suite (which has around 200 translation units) yields the following results:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Headers: 2min 10s.</p>
+</li>
+<li>
+<p>Modules: 39s (this includes the time required to build the <code>std</code> and Boost modules).</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Benchmarks performed on Ubuntu 22.04 with clang-19 and libc++.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_next_steps">Next steps</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>While benchmarks seem promising, the technology still looks very experimental. I think it makes sense for us to wait until the bugs I&#8217;ve found are fixed, and CMake support for <code>import std</code> become stable, before merging any of my work.</p>
+</div>
+<div class="paragraph">
+<p>Still, I&#8217;d appreciate any feedback that you may have.</p>
+</div>
+<div class="paragraph">
+<p>Thanks for reading this far.</p>
+</div>
+</div>
+</div>
+</div>
+<div id="footnotes">
+<hr>
+<div class="footnote" id="_footnotedef_1">
+<a href="#_footnoteref_1">1</a>. It&#8217;s unlikely that end users consume Charconv, since the standard library functions are available in C++17 and higher. I chose Charconv because it&#8217;s compiled, relatively small, has few dependencies, and is a dependency of other libraries, like Boost.Json
 </div>
 </div>
 <div id="footer">
