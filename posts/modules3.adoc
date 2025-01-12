@@ -18,7 +18,7 @@ This prototype includes changes to the following Boost repositories:
 
 Each Boost library gets its own pass:[C++20] module. For example, Boost.Mp11 can be consumed with `import boost.mp11`. Libraries that only export macros (like Boost.Config) don't get a module.
 
-Changes are backwards compatible. Builds using headers will continue to work as usual. The prototype proposes using a "dual mode", where Boost might be consumed using includes or imports. The proposal includes changes to headers and tests to adapt them to C++20 modules using the preprocessor.
+Changes are backwards compatible. Builds using headers will continue to work as usual. The prototype proposes using a "dual mode", where Boost might be consumed using includes or imports. The proposal includes changes to headers and tests to adapt them to pass:[C++20] modules using the preprocessor.
 
 I've taken a bottom-up approach, modularizing libraries in dependency order. The standard library is consumed with `import std` in all the proposed modules. This is the best approach to *reduce build times*, one of the main incentives to prefer imports over includes. If this is your case, you might find xref:bench[the benchmark on the Boost.Mp11 test suite] interesting.
 
@@ -31,7 +31,7 @@ I've also modularized Boost.Mp11 and Boost.Charconv test suites. When pass:[C++2
 The tooling is still a bit experimental. CIs run the following tools:
 
 * MSVC 19.42.34435.0.
-* clang-19 with libc++.
+* clang-19 with pass:[libc++].
 * CMake 3.30 and higher. The proposal uses CMake's experimental support for building the standard library module.
 * Ninja 1.11. In particular, CMake under Windows doesn't support the usual Visual Studio generators when building modules.
 
@@ -100,7 +100,7 @@ extern "C++" {
 
 While this works, it has some drawbacks:
 
-* It doesn't support mixing includes and imports in the tests. Under MSVC, entities declared in the purview can't be re-declared outside of it, even when enclosed in `extern C++`. This is problematic for compiled libraries having several cpp files, too.
+* It doesn't support mixing includes and imports in the tests. Under MSVC, entities declared in the purview can't be re-declared outside of it, even when enclosed in `extern pass:[C++]`. This is problematic for compiled libraries having several cpp files, too.
 * It issues compiler warnings, since include is only recommended in the global module fragment.
 * Requires considerable code changes in headers when compared with alternatives.
 
@@ -155,25 +155,32 @@ When compared to the alternative, this technique:
 
 I'd suggest to go with this second option, once the MSVC teams either fixes or proposes workarounds for these problems.
 
-* TODO: Module implementation units
-* TODO: dll
+=== Compiled libraries
 
-== Continuous Integration
+As with header-only libraries, compiled libraries should also provide a `.cppm` file stating the functions exported by the module. For Charconv, I've converted `.cpp` files in module implementation units in module builds.
 
-I've added workflows akin to the current CMake ones that verify that tests build and run, and that the add_subdirectory and find_package workflow work, for both compilers. Example: https://github.com/boostorg/charconv/pull/255/files#diff-b803fcb7f17ed9235f1e5cb1fcd2f5d3b2838429d4368ae4c57ce4436577f03f
+In Windows, when shared libraries are enabled, a https://gitlab.kitware.com/cmake/cmake/-/issues/25539:[CMake limitation] makes module interfaces within the same project always build with `__declspec(dllexport)`. This has the effect of introducing an extra indirection when calling library functions. This limitation is expected to be lifted in the future.
+
+Note that module exports need not match with DLL exports. DLL exports define the library's ABI, while module exports define its API.
+
+=== Continuous Integration
+
+I've added workflows akin to the current CMake ones that verify that tests build and run, and that the `add_subdirectory` and `find_package` workflow work, for both compilers. For instance, https://github.com/boostorg/charconv/pull/255/files#diff-b803fcb7f17ed9235f1e5cb1fcd2f5d3b2838429d4368ae4c57ce4436577f03f:[this is what the Charconv new CI jobs would look like].
 
 [#bench]
 == Benchmarking
 
 Build performance gains are higher when lots of translation units consume the same library. Building the Boost.Mp11 test suite (which has around 200 translation units) yields the following results:
 
-* No modules:   2min 10s
-* With modules: 0min 39s (includes the time required to build std and Boost modules)
+* Headers: 2min 10s.
+* Modules: 39s (this includes the time required to build the `std` and Boost modules).
+
+Benchmarks performed on Ubuntu 22.04 with clang-19 and pass:[libc++].
 
 == Next steps
 
-* Promising in some aspects
-* Technology still very experimental
-* Any feedback or ideas welcome
-* Likely makes sense to wait for the bugs to be solved and import std become stable in CMake before merging
-* It's still increased maintenance effort - do we want it?
+While benchmarks seem promising, the technology still looks very experimental. I think it makes sense for us to wait until the bugs I've found are fixed, and CMake support for `import std` become stable, before merging any of my work.
+
+Still, I'd appreciate any feedback that you may have.
+
+Thanks for reading this far.
