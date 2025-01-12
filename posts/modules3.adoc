@@ -35,33 +35,40 @@ The tooling is still a bit experimental. CIs run the following tools:
 * CMake 3.30 and higher. The proposal uses CMake's experimental support for building the standard library module.
 * Ninja 1.11. In particular, CMake under Windows doesn't support the usual Visual Studio generators when building modules.
 
-== Code organization and distribution
+== Implementation
 
-* All Boost libraries exporting C++ entities become a module. For instance, the Boost.Mp11 library can be consumed as the `boost.mp11` module. The exception to this are libraries that only export macros, like Boost.Config.
-* Every library provides a module interface unit. For Boost.Mp11, this file is `modules/boost_mp11.cppm`. See subsequent sections for the contents of this file.
-* I've added a `BOOST_USE_MODULES` CMake option to the Boost superproject that enables building modularized libraries as modules. Libraries that don't support modules are built and installed as usual.
-* Libraries that do support modules include conditional logic to add interface units to their builds. See https://github.com/boostorg/mp11/pull/104/files#diff-1e7de1ae2d059d21e1dd75d5812d5a34b0222cef273b7c3a2af62eb747f9d20a
-* Modular builds define a C++ macro, usually `BOOST_USE_MODULES`, to #ifdef things out in modular builds.
-* This has the effect of generating binaries for header-only libraries, too. These binaries should only contain the (possibly empty) module initializers. For header-only libraries like Mp11, I've made these STATIC to minimize trouble. These libraries get installed like other binaries.
-* I've updated the Boost.CMake infrastructure to install module interface units to `CMAKE_INSTALL_DATADIR`. For Boost.Mp11, this yields `/usr/local/share/boost_mp11.cppm`.
-* Libraries can be consumed with `add_subdirectory` and `find_package` as usual. However, due to CMake limitations (which I expect to be lifted at some point), the `find_package` workflow is more restrictive than with headers. See https://discourse.cmake.org/t/advice-on-c-20-modules-boost/10641/9
-* Macro headers: some libraries need to export macros. I've refactored some of the macros to separate headers that don't include C++ entities, but just macros. Example: Boost.Core has a lightweight testing framework used in unit tests. This needs to export macros: https://github.com/anarthal/core/blob/feature/cxx20-modules/include/boost/core/lightweight_test_macros.hpp
+=== CMake
 
-== Testing strategy
+Every library provides a module interface unit defining its exports. For instance, in Boost.Mp11, this file is `modules/boost_mp11.cppm`. It's installed to `CMAKE_INSTALL_DATADIR`, which places it in `/usr/local/share/boost_mp11.cppm` by default.
 
-* Under modular builds, make tests consume the library with import rather than include, via an ifdef. CMake builds with `BOOST_USE_MODULES` build the tests with the imports. Example for a Boost.Mp11 test: https://github.com/boostorg/mp11/pull/104/files#diff-828aba815efe90d8e66e0e4955634950a605e81d7dfab3941b2c62669e142e5c
-* Some tests require accessing functionality that is not exported. Today, this is done by including implementation headers. The same approach applies to modular builds. This implies that mixing imports and includes should be supported, to a certain extent. Example in Boost.Charconv: `test_parser.cpp` tests `boost::charconv::detail::parser`. Read further for more info https://github.com/boostorg/charconv/pull/255/files#diff-eed0db0ed99a211ac7d34de95f2a953e1e3ba234b419ce1726bc629e00e740cb
-* Including standard library headers, then import std works in all compilers. We strive to do the same for Boost.
+Libraries that want to support pass:[C++20] module builds include conditional logic in their CMake to react to `BOOST_USE_MODULES`. For example, https://github.com/boostorg/mp11/pull/104/files#diff-1e7de1ae2d059d21e1dd75d5812d5a34b0222cef273b7c3a2af62eb747f9d20a:[this is what Boost.Mp11 would look like]. Libraries that don't support pass:[C++20] module builds are built and installed as they are today.
 
-== C++ code
+In pass:[C++20] module builds, binary artifacts are generated even for previously header-only builds. For instance, the above CMake generates a `libboost_mp11.a` in Linux. In most cases, these libraries only contain https://clang.llvm.org/docs/StandardCPlusPlusModules.html#module-initializers:[module initializers]. I've made these libraries unconditionally static, to reduce overhead. They are installed along other compiled Boost libraries.
 
+The libraries can be consumed from CMake with `add_subdirectory` and `find_package`, as usual. However, due to https://discourse.cmake.org/t/advice-on-c-20-modules-boost/10641/9:[CMake current limitations], the `find_package` workflow is more sensitive to build flags than with headers.
 
+=== Mixing includes and imports
 
-Strategy 1: ifdef-out dependencies, conditionally export entities depending on a macro.
+At the time of writing, standard library implementations support *including* standard headers *first*, then importing `std`. This is relevant because some standard library headers still need to be included for macros to be visible.
+
+I've tried to support the same in the proposed Boost implementation. This is required by unit tests that need access to entities not exported by the module (usually in the `detail`) namespace. To access these, the relevant `detail` header should be included before the corresponding `import`. https://github.com/boostorg/charconv/pull/255/files#diff-eed0db0ed99a211ac7d34de95f2a953e1e3ba234b419ce1726bc629e00e740cb[This Boost.Charconv test] is an example of this requirement.
+
+Additionally, libraries that need to export macros need *macro headers*. These should contain as few pass:[C++] entities as possible. For example, Boost.Core has a lightweight testing framework used in unit tests that relies on macros. The `boost.core` module exports the required pass:[C++] entities, and https://github.com/anarthal/core/blob/feature/cxx20-modules/include/boost/core/lightweight_test_macros.hpp:[a separate header] provides the macro. All tests use this functionality.
+
+=== Writing module interface units (boost_mp11.cppm)
+
+Broadly, this requires two groups of code changes:
+
+. Update the headers to #ifdef-out all dependencies, based on a macro that is defined in pass:[C++20] module builds.
+. Mark pass:[C++] entities in the public interface as exported.
+
+A possible strategy for point 2 is creating a `BOOST_MP11_MODULE_EXPORT` macro that expands to `export` in module builds, and otherwise to nothing. This is similar to what we do today to handle DLL exports today. Some code samples:
 
 [source,cpp]
 ------
+//
 // File: boost/mp11/list.hpp
+//
 #include <boost/mp11/detail/config.hpp> // Our own includes stay as they are
 #ifndef BOOST_USE_MODULES
 #include <type_traits> // Includes for dependencies are conditionally removed
@@ -71,12 +78,10 @@ BOOST_MP11_MODULE_EXPORT // defined to export if BOOST_USE_MODULES is defined, t
 template<class... T> struct mp_list
 {
 };
-------
 
-
-[source,cpp]
------
+//
 // File: boost_mp11.cppm
+//
 module;
 
 // These headers are required because they define macros
@@ -91,19 +96,21 @@ import std;
 extern "C++" {
 #include <boost/mp11.hpp>
 }
------
+------
 
-This works, but:
+While this works, it has some drawbacks:
 
-* Rules out mixing includes and imports under MSVC. If a name is defined in a module, after `export module`, and then defined somewhere else, MSVC complains of redefinitions. This is not a problem for Mp11, but it is for libraries requiring testing implementation headers.
-* Issues compiler warnings (include is only recommended in the global module fragment). These need to be suppressed.
-* Is more intrusive to headers.
+* It doesn't support mixing includes and imports in the tests. Under MSVC, entities declared in the purview can't be re-declared outside of it, even when enclosed in `extern C++`. This is problematic for compiled libraries having several cpp files, too.
+* It issues compiler warnings, since include is only recommended in the global module fragment.
+* Requires considerable code changes in headers when compared with alternatives.
 
-Strategy 2: ifdef-out dependencies, then use export using
+The above strategy works fine for Boost.Mp11, but is inviable for Boost.Charconv. As an alternative, I've used the `export using` technique:
 
 [source,cpp]
-----
+------
+//
 // File: boost/mp11/list.hpp
+//
 // Same strategy for includes as before
 #include <boost/mp11/detail/config.hpp>
 #ifndef BOOST_USE_MODULES
@@ -114,11 +121,10 @@ Strategy 2: ifdef-out dependencies, then use export using
 template<class... T> struct mp_list
 {
 };
-----
 
-[source,cpp]
------
+//
 // File: boost_mp11.cppm
+//
 module;
 
 // Includes and imports required by Boost.Mp11.
@@ -136,18 +142,21 @@ export module boost.mp11;
 export namespace boost::mp11 {
 using mp11::list;
 }
------
+------
 
-This:
+When compared to the alternative, this technique:
 
-* Supports include-then-import under all compilers.
+* Supports mixing includes and imports under all compilers.
 * Doesn't generate compiler warnings.
-* Is cleaner for headers.
-* It hits two MSVC bugs that make it troublesome right now:
-    * `mp_size_t` causes trouble in importers under some circumstances: https://developercommunity.visualstudio.com/t/MSVC-C20-modules:-export-using-templat/10826448
-    * Template specializations seem to always be discarded, even if they are decl-reachable: https://developercommunity.visualstudio.com/t/C20-modules:-specialzations-in-the-glo/10826499
+* Requires less code changes in headers.
+* It hits two troublesome MSVC bugs:
+**   Some templated type aliases, like `mp_size_t`, cause trouble in importers under some circumstances: https://developercommunity.visualstudio.com/t/MSVC-C20-modules:-export-using-templat/10826448:[see bug report].
+**   Template specializations seem to always be discarded, even if they are decl-reachable: https://developercommunity.visualstudio.com/t/C20-modules:-specialzations-in-the-glo/10826499:[see bug report].
 
 I'd suggest to go with this second option, once the MSVC teams either fixes or proposes workarounds for these problems.
+
+* TODO: Module implementation units
+* TODO: dll
 
 == Continuous Integration
 
