@@ -444,14 +444,16 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
 <ul class="sectlevel1">
+<li><a href="#_scope">Scope</a></li>
 <li><a href="#_high_level_overview">High-level overview</a></li>
 <li><a href="#_supported_compilers_and_tools">Supported compilers and tools</a></li>
 <li><a href="#_implementation">Implementation</a>
 <ul class="sectlevel2">
 <li><a href="#_cmake">CMake</a></li>
 <li><a href="#_mixing_includes_and_imports">Mixing includes and imports</a></li>
+<li><a href="#compatibility-headers">Compatibility headers</a></li>
 <li><a href="#_writing_module_interface_units_boost_mp11_cppm">Writing module interface units (boost_mp11.cppm)</a></li>
-<li><a href="#_compiled_libraries">Compiled libraries</a></li>
+<li><a href="#compiled">Compiled libraries</a></li>
 <li><a href="#_continuous_integration">Continuous Integration</a></li>
 </ul>
 </li>
@@ -464,8 +466,38 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div id="preamble">
 <div class="sectionbody">
 <div class="paragraph">
-<p>I&#8217;ve written a small proof-of-concept that allows Boost to be consumed as C++20 modules. This article explains the design decisions I&#8217;ve made and some caveats I&#8217;ve found.</p>
+<p>Updated on 2025-01-29 with my latest findings.</p>
 </div>
+<div class="paragraph">
+<p>I&#8217;ve written a small proof-of-concept that allows Boost to be consumed as C++20 modules. This article explains the design decisions I&#8217;ve made and the caveats I&#8217;ve found.</p>
+</div>
+<div class="paragraph">
+<p><strong>TL;DR</strong>:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>We chose to support <code>#include &lt;boost/X&gt;</code> and <code>import boost.X</code> using the same Boost code, using a <code>BOOST_USE_MODULES</code> macro switch. When using modules, we consume the standard library with <code>import std</code>.</p>
+</li>
+<li>
+<p>We propose a "compatibility header" approach, where <code>#include &lt;boost/X&gt;</code> translates into <code>import boost.X</code> transparently when <code>BOOST_USE_MODULES</code> is defined. This facilitates migration.</p>
+</li>
+<li>
+<p>Implementing this requires changes in the libraries. They are manageable but increase maintenance effort.</p>
+</li>
+<li>
+<p>Build-time benchmarks are promising, observing a x3 speedup in some test suites.</p>
+</li>
+<li>
+<p>The ecosystem is not ready yet: CMake&#8217;s support for <code>import std</code> is still experimental, Visual Studio CMake generators don&#8217;t work with <code>import std</code>, and MSVC has several bugs that are hard to work around. We&#8217;ve decided to wait until these points are fixed before merging this proposal into Boost.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_scope">Scope</h2>
+<div class="sectionbody">
 <div class="paragraph">
 <p>This prototype includes changes to the following Boost repositories:</p>
 </div>
@@ -487,6 +519,9 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <p>Boost.ThrowException (minimal subset to support test suites in the above two): <a href="https://github.com/anarthal/throw_exception/tree/feature/cxx20-modules" class="bare">https://github.com/anarthal/throw_exception/tree/feature/cxx20-modules</a></p>
 </li>
 <li>
+<p>Boost.Config (compatibility headers): <a href="https://github.com/anarthal/config/tree/feature/cxx20-modules" class="bare">https://github.com/anarthal/config/tree/feature/cxx20-modules</a></p>
+</li>
+<li>
 <p>Boost.CMake (scripts to install modules with Boost): <a href="https://github.com/anarthal/boost-cmake/tree/feature/cxx20-modules" class="bare">https://github.com/anarthal/boost-cmake/tree/feature/cxx20-modules</a></p>
 </li>
 </ul>
@@ -500,7 +535,10 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <p>Each Boost library gets its own C++20 module. For example, Boost.Mp11 can be consumed with <code>import boost.mp11</code>. Libraries that only export macros (like Boost.Config) don&#8217;t get a module.</p>
 </div>
 <div class="paragraph">
-<p>Changes are backwards compatible. Builds using headers will continue to work as usual. The prototype proposes using a "dual mode", where Boost might be consumed using includes or imports. The proposal includes changes to headers and tests to adapt them to C++20 modules using the preprocessor.</p>
+<p>Changes are backwards compatible. Builds using headers will continue to work as usual. The prototype proposes using a "dual mode", where Boost might be consumed using either includes or imports. A preprocessor macro (<code>BOOST_USE_MODULES</code>) is used to select which mode to use.</p>
+</div>
+<div class="paragraph">
+<p>To facilitate migration, when <code>BOOST_USE_MODULES</code> is defined, public Boost headers <code>import</code> the relevant library, instead of defining the usual symbols. I&#8217;ve called these <a href="#compatibility-headers"><em>compatibility headers</em></a>.</p>
 </div>
 <div class="paragraph">
 <p>I&#8217;ve taken a bottom-up approach, modularizing libraries in dependency order. The standard library is consumed with <code>import std</code> in all the proposed modules. This is the best approach to <strong>reduce build times</strong>, one of the main incentives to prefer imports over includes. If this is your case, you might find <a href="#bench">the benchmark on the Boost.Mp11 test suite</a> interesting.</p>
@@ -531,7 +569,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <p>CMake 3.30 and higher. The proposal uses CMake&#8217;s experimental support for building the standard library module.</p>
 </li>
 <li>
-<p>Ninja 1.11. In particular, CMake under Windows doesn&#8217;t support the usual Visual Studio generators when building modules.</p>
+<p>Ninja 1.11. In particular, CMake under Windows doesn&#8217;t support the usual Visual Studio generators when using <code>import std</code>.</p>
 </li>
 </ul>
 </div>
@@ -561,112 +599,176 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <p>At the time of writing, standard library implementations support <strong>including</strong> standard headers <strong>first</strong>, then importing <code>std</code>. This is relevant because some standard library headers still need to be included for macros to be visible.</p>
 </div>
 <div class="paragraph">
-<p>I&#8217;ve tried to support the same in the proposed Boost implementation. This is required by unit tests that need access to entities not exported by the module (usually in the <code>detail</code>) namespace. To access these, the relevant <code>detail</code> header should be included before the corresponding <code>import</code>. <a href="https://github.com/boostorg/charconv/pull/255/files#diff-eed0db0ed99a211ac7d34de95f2a953e1e3ba234b419ce1726bc629e00e740cb">This Boost.Charconv test</a> is an example of this requirement.</p>
+<p>In general, we&#8217;ve chosen not to support this in the general case: you should <strong>either include or import Boost, but not both</strong>. Compatibility headers help maintain this consistency across your project.</p>
 </div>
 <div class="paragraph">
-<p>Additionally, libraries that need to export macros need <strong>macro headers</strong>. These should contain as few C++ entities as possible. For example, Boost.Core has a lightweight testing framework used in unit tests that relies on macros. The <code>boost.core</code> module exports the required C++ entities, and <a href="https://github.com/anarthal/core/blob/feature/cxx20-modules/include/boost/core/lightweight_test_macros.hpp:">a separate header</a> provides the macro. All tests use this functionality.</p>
+<p>This choice allows libraries to attach their declarations to their named module <sup class="footnote">[<a id="_footnoteref_2" class="footnote" href="#_footnotedef_2" title="View footnote.">2</a>]</sup>. This makes ODR violations easier to detect and may speed up compilation.</p>
+</div>
+<div class="paragraph">
+<p>Some libraries may still want to support mixing imports and includes. Compiled libraries with tests that require access to implementation details might require this. See <a href="#compiled">the section on compiled libraries</a> for more info.</p>
+</div>
+<div class="paragraph">
+<p>Some libraries need to make macros available to users. Macros must be made available using traditional includes even when using modules, since these don&#8217;t know about macros. In the prototype, <strong>compatibility headers make public macros available</strong> in addition to importing the relevant module. For example, Boost.Core has a lightweight testing framework used in unit tests that relies on macros. The <code>boost.core</code> module exports the required C++ entities, with <a href="https://github.com/anarthal/core/blob/feature/cxx20-modules/include/boost/core/lightweight_test.hpp:">the header</a> performing the relevant imports and macro definitions.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="compatibility-headers">Compatibility headers</h3>
+<div class="paragraph">
+<p>All public headers have been converted into compatibility headers. This is what a compatibility header could look like:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">// File: boost/mp11/list.hpp
+
+// Conditionally skip declarations. BOOST_MP11_INTERFACE_UNIT is only defined
+// in boost_mp11.cppm
+#if defined(BOOST_USE_MODULES) &amp;&amp; !defined(BOOST_MP11_INTERFACE_UNIT)
+
+#include &lt;boost/mp11/version.hpp&gt; // Declares the BOOST_MP11_VERSION macro
+
+// Boost libraries might need to define this because of certain limitations
+// on where imports can be located in module units
+#ifndef BOOST_MP11_SKIP_IMPORT
+import boost.mp11;
+#endif
+
+#else
+
+namespace boost::mp11 { /* regular declarations */ }
+
+#endif</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The idea is that:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Non-modular code (like test executables) includes the header directly, requiring no changes.</p>
+</li>
+<li>
+<p>Dual code (like other Boost libraries) also includes the header directly, without the need to conditionally ifdef dependencies out. The <code>BOOST_MP11_SKIP_IMPORT</code> macro might need to be defined because imports must be located before other definitions in module units.</p>
+</li>
+<li>
+<p>Modular-only code can directly use the import.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>We&#8217;ve also created a bunch of standard library compatibility headers in Boost.Config that follow the same principle. For example:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">// File: boost/config/std/type_traits.hpp
+#ifdef BOOST_USE_MODULES
+#ifndef BOOST_CONFIG_SKIP_IMPORT_STD
+import std;
+#endif
+#else
+#include &lt;type_traits&gt;
+#endif</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>I&#8217;d like to thank Peter Dimov for proposing the idea on compatibility headers.</p>
 </div>
 </div>
 <div class="sect2">
 <h3 id="_writing_module_interface_units_boost_mp11_cppm">Writing module interface units (boost_mp11.cppm)</h3>
 <div class="paragraph">
-<p>Broadly, this requires two groups of code changes:</p>
-</div>
-<div class="olist arabic">
-<ol class="arabic">
-<li>
-<p>Update the headers to #ifdef-out all dependencies, based on a macro that is defined in C++20 module builds.</p>
-</li>
-<li>
-<p>Mark C++ entities in the public interface as exported.</p>
-</li>
-</ol>
+<p>We first need to make sure that our headers don&#8217;t include any third-party code when <code>BOOST_USE_MODULES</code> is defined. Standard library headers can be replaced by the equivalent Boost.Config compatibility headers. Boost dependencies don&#8217;t need to be updated. Some other headers may need to be ifdef&#8217;ed-out and included in the global module fragment.</p>
 </div>
 <div class="paragraph">
-<p>A possible strategy for point 2 is creating a <code>BOOST_MP11_MODULE_EXPORT</code> macro that expands to <code>export</code> in module builds, and otherwise to nothing. This is similar to what we do today to handle DLL exports today. Some code samples:</p>
+<p>For example: <sup class="footnote">[<a id="_footnoteref_3" class="footnote" href="#_footnotedef_3" title="View footnote.">3</a>]</sup></p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">//
-// File: boost/mp11/list.hpp
-//
+<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">// File: boost/mp11/list.hpp
+
+#if defined(BOOST_USE_MODULES) &amp;&amp; !defined(BOOST_MP11_INTERFACE_UNIT)
+// Compatibility header section: omitted for brevity
+#else
+
+// Includes
 #include &lt;boost/mp11/detail/config.hpp&gt; // Our own includes stay as they are
-#ifndef BOOST_USE_MODULES
-#include &lt;type_traits&gt; // Includes for dependencies are conditionally removed
-#endif
+#include &lt;boost/config/std/type_traits.hpp&gt; // Replace stdlib includes by compatibility headers
+
+namespace boost::mp11 { /* regular declarations */ }
+
+#endif</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>We now need to mark C++ entities in the public interface as exported. The first solution to this is to create a <code>BOOST_MP11_MODULE_EXPORT</code> macro that expands to <code>export</code> in module builds, and to nothing otherwise. This is similar to what we do today to handle DLL exports today. Some code samples:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">// File: boost/mp11/list.hpp
+// Compatibility header and includes skipped for brevity
 
 BOOST_MP11_MODULE_EXPORT // defined to export if BOOST_USE_MODULES is defined, to nothing otherwise
 template&lt;class... T&gt; struct mp_list
 {
-};
-
-//
-// File: boost_mp11.cppm
-//
-module;
-
-// These headers are required because they define macros
-#include &lt;cassert&gt;
-
-export module boost.mp11;
-
-import std;
-
-// extern C++ makes all the included entities attached to the global module.
-// If we forget to ifdef an include, this is supposed to make it less problematic
-extern "C++" {
-#include &lt;boost/mp11.hpp&gt;
-}</code></pre>
+};</code></pre>
 </div>
 </div>
 <div class="paragraph">
-<p>While this works, it has some drawbacks:</p>
+<p>The module interface becomes:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">// File: boost_mp11.cppm
+
+module; // Global module fragment
+#define BOOST_MP11_INTERFACE_UNIT     // We want headers to actually declare entities
+#define BOOST_CONFIG_SKIP_IMPORT_STD  // Don't import std in compatibility headers
+#include &lt;cassert&gt; // Some standard library headers need to be included for their macros
+
+export module boost.mp11;
+
+import std;               // Import should be first
+#include &lt;boost/mp11.hpp&gt; // All entities declared here get attached to the named module
+                          // This issues a compiler warning that should be suppressed</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This allows attaching the declared entities to the <code>boost.mp11</code> module, but has the following drawbacks:</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>It doesn&#8217;t support mixing includes and imports in the tests. Under MSVC, entities declared in the purview can&#8217;t be re-declared outside of it, even when enclosed in <code>extern C++</code>. This is problematic for compiled libraries having several cpp files, too.</p>
+<p>It doesn&#8217;t support mixing includes and imports, as mentioned earlier.</p>
 </li>
 <li>
-<p>It issues compiler warnings, since include is only recommended in the global module fragment.</p>
-</li>
-<li>
-<p>Requires considerable code changes in headers when compared with alternatives.</p>
+<p>If we forget to ifdef-out a third-party include in <code>&lt;boost/mp11.hpp&gt;</code> an ODR violation may occur. Compatibility headers make this less likely to happen.</p>
 </li>
 </ul>
 </div>
 <div class="paragraph">
-<p>The above strategy works fine for Boost.Mp11, but is inviable for Boost.Charconv. As an alternative, I&#8217;ve used the <code>export using</code> technique:</p>
+<p>We can use the <code>export using</code> technique as an alternative. Dependencies should still be ifdef&#8217;ed-out or replaced by compatibility headers, but no <code>BOOST_MP11_MODULE_EXPORT</code> macro is required:</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">//
-// File: boost/mp11/list.hpp
-//
-// Same strategy for includes as before
-#include &lt;boost/mp11/detail/config.hpp&gt;
-#ifndef BOOST_USE_MODULES
-#include &lt;type_traits&gt;
-#endif
+<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">// File: boost/mp11/list.hpp
+// Compatibility header and includes skipped for brevity
 
-// No longer exported
-template&lt;class... T&gt; struct mp_list
+template&lt;class... T&gt; struct mp_list // No export macro required
 {
-};
-
-//
-// File: boost_mp11.cppm
-//
-module;
-
-// Includes and imports required by Boost.Mp11.
-// We can place these in a boost/mp11/detail/global_module_fragment.hpp,
-// so it can be used in tests
-#include &lt;cassert&gt;
-import std;
-
-// The library
-#include &lt;boost/mp11.hpp&gt;
+};</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p><code>boost_mp11.cppm</code> becomes:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">// File: boost_mp11.cppm
+module; // Global module fragment
+#define BOOST_MP11_INTERFACE_UNIT // We want headers to actually declare entities
+                                  // No BOOST_CONFIG_SKIP_IMPORT_STD: import std is fine in the global module fragment
+#include &lt;cassert&gt;        // Some standard library headers need to be included for their macros
+#include &lt;boost/mp11.hpp&gt; // All entities are attached to the global module.
 
 export module boost.mp11;
 
@@ -677,40 +779,13 @@ using mp11::list;
 </div>
 </div>
 <div class="paragraph">
-<p>When compared to the alternative, this technique:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>Supports mixing includes and imports under all compilers.</p>
-</li>
-<li>
-<p>Doesn&#8217;t generate compiler warnings.</p>
-</li>
-<li>
-<p>Requires less code changes in headers.</p>
-</li>
-<li>
-<p>It hits two troublesome MSVC bugs:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Some templated type aliases, like <code>mp_size_t</code>, cause trouble in importers under some circumstances: <a href="https://developercommunity.visualstudio.com/t/MSVC-C20-modules:-export-using-templat/10826448:">see bug report</a>.</p>
-</li>
-<li>
-<p>Template specializations seem to always be discarded, even if they are decl-reachable: <a href="https://developercommunity.visualstudio.com/t/C20-modules:-specialzations-in-the-glo/10826499:">see bug report</a>.</p>
-</li>
-</ul>
-</div>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>I&#8217;d suggest to go with this second option, once the MSVC teams either fixes or proposes workarounds for these problems.</p>
+<p>This technique doesn&#8217;t attach names to the named module, with the pros and cons this brings. Additionally, it hits two troublesome bugs in MSVC:
+* Some templated type aliases, like <code>mp_size_t</code>, cause trouble in importers under some circumstances: <a href="https://developercommunity.visualstudio.com/t/MSVC-C20-modules:-export-using-templat/10826448:">see bug report</a>.
+* Template specializations seem to always be discarded, even if they are decl-reachable: <a href="https://developercommunity.visualstudio.com/t/C20-modules:-specialzations-in-the-glo/10826499:">see bug report</a>.</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_compiled_libraries">Compiled libraries</h3>
+<h3 id="compiled">Compiled libraries</h3>
 <div class="paragraph">
 <p>As with header-only libraries, compiled libraries should also provide a <code>.cppm</code> file stating the functions exported by the module. For Charconv, I&#8217;ve converted <code>.cpp</code> files in module implementation units in module builds.</p>
 </div>
@@ -719,6 +794,9 @@ using mp11::list;
 </div>
 <div class="paragraph">
 <p>Note that module exports need not match with DLL exports. DLL exports define the library&#8217;s ABI, while module exports define its API.</p>
+</div>
+<div class="paragraph">
+<p>Some tests in Boost.Charconv need to access implementation details (i.e. entities in the <code>detail</code> namespace). If it was a header-only library, such tests could just include the relevant <code>detail</code> header instead of importing the module. This does not work for compiled libraries because detail headers might reference functions defined in the module implementation units. In other words, these tests need to mix includes and imports. For this reason, I&#8217;ve used the <code>export using</code> technique for Boost.Charconv.</p>
 </div>
 </div>
 <div class="sect2">
@@ -754,10 +832,10 @@ using mp11::list;
 <h2 id="_next_steps">Next steps</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>While benchmarks seem promising, the technology still looks very experimental. I think it makes sense for us to wait until the bugs I&#8217;ve found are fixed, and CMake support for <code>import std</code> become stable, before merging any of my work.</p>
+<p>After discussing with maintainers, we&#8217;ve decided to park the initiative for now. I expect to revisit it once the MSVC bugs I&#8217;ve found are fixed and CMake support for <code>import std</code> becomes stable.</p>
 </div>
 <div class="paragraph">
-<p>Still, I&#8217;d appreciate any feedback that you may have.</p>
+<p>As always, I&#8217;d still appreciate any feedback that you may have.</p>
 </div>
 <div class="paragraph">
 <p>Thanks for reading this far.</p>
@@ -770,10 +848,16 @@ using mp11::list;
 <div class="footnote" id="_footnotedef_1">
 <a href="#_footnoteref_1">1</a>. It&#8217;s unlikely that end users consume Charconv, since the standard library functions are available in C++17 and higher. I chose Charconv because it&#8217;s compiled, relatively small, has few dependencies, and is a dependency of other libraries, like Boost.Json
 </div>
+<div class="footnote" id="_footnotedef_2">
+<a href="#_footnoteref_2">2</a>. Anything declared after <code>export module boost.xyz;</code> is considered attached to <code>boost.xyz</code>, and must be defined in <code>boost.xyz</code>, and nowhere else. This enforcement makes ODR violations easier to detect, and reduces the amount of work required by the compiler. On the other hand, declarations in the global module fragment or declarations prefixed by <code>extern "C++"</code> are considered attached to the global module, and are not subject to the former rules. See <a href="https://en.cppreference.com/w/cpp/language/modules:">the cppreference section on module ownership</a> for more info
+</div>
+<div class="footnote" id="_footnotedef_3">
+<a href="#_footnoteref_3">3</a>. To avoid depending on Boost.Config, Boost.Mp11 has its own standard library compatibility headers.
+</div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2025-01-12 20:21:05 UTC
+Last updated 2025-01-29 16:40:14 UTC
 </div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.18.3/highlight.min.js"></script>
