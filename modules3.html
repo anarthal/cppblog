@@ -433,7 +433,221 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 #footer-text{color:rgba(0,0,0,.6);font-size:.9em}}
 @media amzn-kf8{#header,#content,#footnotes,#footer{padding:0}}
 </style>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.18.3/styles/github.min.css">
+<style>
+pre.rouge table td { padding: 5px; }
+pre.rouge table pre { margin: 0; }
+pre.rouge .cm {
+  color: #999988;
+  font-style: italic;
+}
+pre.rouge .cp {
+  color: #999999;
+  font-weight: bold;
+}
+pre.rouge .c1 {
+  color: #999988;
+  font-style: italic;
+}
+pre.rouge .cs {
+  color: #999999;
+  font-weight: bold;
+  font-style: italic;
+}
+pre.rouge .c, pre.rouge .ch, pre.rouge .cd, pre.rouge .cpf {
+  color: #999988;
+  font-style: italic;
+}
+pre.rouge .err {
+  color: #a61717;
+  background-color: #e3d2d2;
+}
+pre.rouge .gd {
+  color: #000000;
+  background-color: #ffdddd;
+}
+pre.rouge .ge {
+  color: #000000;
+  font-style: italic;
+}
+pre.rouge .gr {
+  color: #aa0000;
+}
+pre.rouge .gh {
+  color: #999999;
+}
+pre.rouge .gi {
+  color: #000000;
+  background-color: #ddffdd;
+}
+pre.rouge .go {
+  color: #888888;
+}
+pre.rouge .gp {
+  color: #555555;
+}
+pre.rouge .gs {
+  font-weight: bold;
+}
+pre.rouge .gu {
+  color: #aaaaaa;
+}
+pre.rouge .gt {
+  color: #aa0000;
+}
+pre.rouge .kc {
+  color: #000000;
+  font-weight: bold;
+}
+pre.rouge .kd {
+  color: #000000;
+  font-weight: bold;
+}
+pre.rouge .kn {
+  color: #000000;
+  font-weight: bold;
+}
+pre.rouge .kp {
+  color: #000000;
+  font-weight: bold;
+}
+pre.rouge .kr {
+  color: #000000;
+  font-weight: bold;
+}
+pre.rouge .kt {
+  color: #445588;
+  font-weight: bold;
+}
+pre.rouge .k, pre.rouge .kv {
+  color: #000000;
+  font-weight: bold;
+}
+pre.rouge .mf {
+  color: #009999;
+}
+pre.rouge .mh {
+  color: #009999;
+}
+pre.rouge .il {
+  color: #009999;
+}
+pre.rouge .mi {
+  color: #009999;
+}
+pre.rouge .mo {
+  color: #009999;
+}
+pre.rouge .m, pre.rouge .mb, pre.rouge .mx {
+  color: #009999;
+}
+pre.rouge .sa {
+  color: #000000;
+  font-weight: bold;
+}
+pre.rouge .sb {
+  color: #d14;
+}
+pre.rouge .sc {
+  color: #d14;
+}
+pre.rouge .sd {
+  color: #d14;
+}
+pre.rouge .s2 {
+  color: #d14;
+}
+pre.rouge .se {
+  color: #d14;
+}
+pre.rouge .sh {
+  color: #d14;
+}
+pre.rouge .si {
+  color: #d14;
+}
+pre.rouge .sx {
+  color: #d14;
+}
+pre.rouge .sr {
+  color: #009926;
+}
+pre.rouge .s1 {
+  color: #d14;
+}
+pre.rouge .ss {
+  color: #990073;
+}
+pre.rouge .s, pre.rouge .dl {
+  color: #d14;
+}
+pre.rouge .na {
+  color: #008080;
+}
+pre.rouge .bp {
+  color: #999999;
+}
+pre.rouge .nb {
+  color: #0086B3;
+}
+pre.rouge .nc {
+  color: #445588;
+  font-weight: bold;
+}
+pre.rouge .no {
+  color: #008080;
+}
+pre.rouge .nd {
+  color: #3c5d5d;
+  font-weight: bold;
+}
+pre.rouge .ni {
+  color: #800080;
+}
+pre.rouge .ne {
+  color: #990000;
+  font-weight: bold;
+}
+pre.rouge .nf, pre.rouge .fm {
+  color: #990000;
+  font-weight: bold;
+}
+pre.rouge .nl {
+  color: #990000;
+  font-weight: bold;
+}
+pre.rouge .nn {
+  color: #555555;
+}
+pre.rouge .nt {
+  color: #000080;
+}
+pre.rouge .vc {
+  color: #008080;
+}
+pre.rouge .vg {
+  color: #008080;
+}
+pre.rouge .vi {
+  color: #008080;
+}
+pre.rouge .nv, pre.rouge .vm {
+  color: #008080;
+}
+pre.rouge .ow {
+  color: #000000;
+  font-weight: bold;
+}
+pre.rouge .o {
+  color: #000000;
+  font-weight: bold;
+}
+pre.rouge .w {
+  color: #bbbbbb;
+}
+pre.rouge {
+  background-color: #f8f8f8;
+}
+</style>
 </head>
 <body class="article toc2 toc-left">
 <div id="header">
@@ -477,16 +691,16 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div class="ulist">
 <ul>
 <li>
-<p>We chose to support <code>#include &lt;boost/X&gt;</code> and <code>import boost.X</code> using the same Boost code, using a <code>BOOST_USE_MODULES</code> macro switch. When using modules, we consume the standard library with <code>import std</code>.</p>
+<p>We chose to support <code>#include &lt;boost/xyz.hpp&gt;</code> and <code>import boost.xyz</code> using the same Boost code, using a <code>BOOST_USE_MODULES</code> macro switch. When using modules, we consume the standard library with <code>import std</code>.</p>
 </li>
 <li>
-<p>We propose a "compatibility header" approach, where <code>#include &lt;boost/X&gt;</code> translates into <code>import boost.X</code> transparently when <code>BOOST_USE_MODULES</code> is defined. This facilitates migration.</p>
+<p>We propose a "compatibility header" approach, where <code>#include &lt;boost/xyz.hpp&gt;</code> translates into <code>import boost.xyz</code> transparently when <code>BOOST_USE_MODULES</code> is defined. This facilitates migration.</p>
 </li>
 <li>
 <p>Implementing this requires changes in the libraries. They are manageable but increase maintenance effort.</p>
 </li>
 <li>
-<p>Build-time benchmarks are promising, observing a x3 speedup in some test suites.</p>
+<p>Build-time benchmarks are promising, observing <a href="#bench">a 3x speedup in some test suites</a>.</p>
 </li>
 <li>
 <p>The ecosystem is not ready yet: CMake&#8217;s support for <code>import std</code> is still experimental, Visual Studio CMake generators don&#8217;t work with <code>import std</code>, and MSVC has several bugs that are hard to work around. We&#8217;ve decided to wait until these points are fixed before merging this proposal into Boost.</p>
@@ -605,10 +819,10 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <p>This choice allows libraries to attach their declarations to their named module <sup class="footnote">[<a id="_footnoteref_2" class="footnote" href="#_footnotedef_2" title="View footnote.">2</a>]</sup>. This makes ODR violations easier to detect and may speed up compilation.</p>
 </div>
 <div class="paragraph">
-<p>Some libraries may still want to support mixing imports and includes. Compiled libraries with tests that require access to implementation details might require this. See <a href="#compiled">the section on compiled libraries</a> for more info.</p>
+<p>Some libraries may still want to support mixing imports and includes. Compiled libraries with tests that require access to implementation details are an example of this. See <a href="#compiled">this section</a> for more info.</p>
 </div>
 <div class="paragraph">
-<p>Some libraries need to make macros available to users. Macros must be made available using traditional includes even when using modules, since these don&#8217;t know about macros. In the prototype, <strong>compatibility headers make public macros available</strong> in addition to importing the relevant module. For example, Boost.Core has a lightweight testing framework used in unit tests that relies on macros. The <code>boost.core</code> module exports the required C++ entities, with <a href="https://github.com/anarthal/core/blob/feature/cxx20-modules/include/boost/core/lightweight_test.hpp:">the header</a> performing the relevant imports and macro definitions.</p>
+<p>Some libraries need to make macros available to users. Macros must always be exported using traditional includes, since modules don&#8217;t know anything about macros. In the prototype, <strong>compatibility headers make public macros available</strong> in addition to importing the relevant module. For example, Boost.Core has a lightweight testing framework used in unit tests that relies on macros. The <code>boost.core</code> module exports the required C++ entities, with <a href="https://github.com/anarthal/core/blob/feature/cxx20-modules/include/boost/core/lightweight_test.hpp:">the header</a> performing the relevant imports and macro definitions.</p>
 </div>
 </div>
 <div class="sect2">
@@ -618,25 +832,25 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">// File: boost/mp11/list.hpp
+<pre class="rouge highlight"><code data-lang="cpp"><span class="c1">// File: boost/mp11/list.hpp</span>
 
-// Conditionally skip declarations. BOOST_MP11_INTERFACE_UNIT is only defined
-// in boost_mp11.cppm
-#if defined(BOOST_USE_MODULES) &amp;&amp; !defined(BOOST_MP11_INTERFACE_UNIT)
+<span class="c1">// Conditionally skip declarations. BOOST_MP11_INTERFACE_UNIT is only defined</span>
+<span class="c1">// in boost_mp11.cppm</span>
+<span class="cp">#if defined(BOOST_USE_MODULES) &amp;&amp; !defined(BOOST_MP11_INTERFACE_UNIT)
+</span>
+<span class="cp">#include</span> <span class="cpf">&lt;boost/mp11/version.hpp&gt;</span><span class="c1"> // Declares the BOOST_MP11_VERSION macro</span><span class="cp">
+</span>
+<span class="c1">// Boost libraries might need to define this because of certain limitations</span>
+<span class="c1">// on where imports can be located in module units</span>
+<span class="cp">#ifndef BOOST_MP11_SKIP_IMPORT
+</span><span class="n">import</span> <span class="n">boost</span><span class="p">.</span><span class="n">mp11</span><span class="p">;</span>
+<span class="cp">#endif
+</span>
+<span class="cp">#else
+</span>
+<span class="k">namespace</span> <span class="n">boost</span><span class="o">::</span><span class="n">mp11</span> <span class="p">{</span> <span class="cm">/* regular declarations */</span> <span class="p">}</span>
 
-#include &lt;boost/mp11/version.hpp&gt; // Declares the BOOST_MP11_VERSION macro
-
-// Boost libraries might need to define this because of certain limitations
-// on where imports can be located in module units
-#ifndef BOOST_MP11_SKIP_IMPORT
-import boost.mp11;
-#endif
-
-#else
-
-namespace boost::mp11 { /* regular declarations */ }
-
-#endif</code></pre>
+<span class="cp">#endif</span></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -660,14 +874,14 @@ namespace boost::mp11 { /* regular declarations */ }
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">// File: boost/config/std/type_traits.hpp
-#ifdef BOOST_USE_MODULES
+<pre class="rouge highlight"><code data-lang="cpp"><span class="c1">// File: boost/config/std/type_traits.hpp</span>
+<span class="cp">#ifdef BOOST_USE_MODULES
 #ifndef BOOST_CONFIG_SKIP_IMPORT_STD
-import std;
-#endif
+</span><span class="n">import</span> <span class="n">std</span><span class="p">;</span>
+<span class="cp">#endif
 #else
-#include &lt;type_traits&gt;
-#endif</code></pre>
+#include</span> <span class="cpf">&lt;type_traits&gt;</span><span class="cp">
+#endif</span></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -684,19 +898,20 @@ import std;
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">// File: boost/mp11/list.hpp
+<pre class="rouge highlight"><code data-lang="cpp"><span class="c1">// File: boost/mp11/list.hpp</span>
 
-#if defined(BOOST_USE_MODULES) &amp;&amp; !defined(BOOST_MP11_INTERFACE_UNIT)
-// Compatibility header section: omitted for brevity
-#else
+<span class="cp">#if defined(BOOST_USE_MODULES) &amp;&amp; !defined(BOOST_MP11_INTERFACE_UNIT)
+</span><span class="c1">// Compatibility header section: omitted for brevity</span>
+<span class="cp">#else
+</span>
+<span class="c1">// Includes</span>
+<span class="cp">#include</span> <span class="cpf">&lt;boost/mp11/detail/config.hpp&gt;</span><span class="c1">     // Our own includes stay as they are</span><span class="cp">
+#include</span> <span class="cpf">&lt;boost/config/std/type_traits.hpp&gt;</span><span class="c1"> // Replace stdlib includes</span><span class="cp">
+</span>                                            <span class="c1">// by compatibility headers</span>
 
-// Includes
-#include &lt;boost/mp11/detail/config.hpp&gt; // Our own includes stay as they are
-#include &lt;boost/config/std/type_traits.hpp&gt; // Replace stdlib includes by compatibility headers
+<span class="k">namespace</span> <span class="n">boost</span><span class="o">::</span><span class="n">mp11</span> <span class="p">{</span> <span class="cm">/* regular declarations */</span> <span class="p">}</span>
 
-namespace boost::mp11 { /* regular declarations */ }
-
-#endif</code></pre>
+<span class="cp">#endif</span></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -704,13 +919,13 @@ namespace boost::mp11 { /* regular declarations */ }
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">// File: boost/mp11/list.hpp
-// Compatibility header and includes skipped for brevity
+<pre class="rouge highlight"><code data-lang="cpp"><span class="c1">// File: boost/mp11/list.hpp</span>
+<span class="c1">// Compatibility header and includes skipped for brevity</span>
 
-BOOST_MP11_MODULE_EXPORT // defined to export if BOOST_USE_MODULES is defined, to nothing otherwise
-template&lt;class... T&gt; struct mp_list
-{
-};</code></pre>
+<span class="n">BOOST_MP11_MODULE_EXPORT</span> <span class="c1">// defined to export if BOOST_USE_MODULES is defined, to nothing otherwise</span>
+<span class="k">template</span><span class="o">&lt;</span><span class="k">class</span><span class="o">...</span> <span class="nc">T</span><span class="p">&gt;</span> <span class="k">struct</span> <span class="nc">mp_list</span>
+<span class="p">{</span>
+<span class="p">};</span></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -718,18 +933,18 @@ template&lt;class... T&gt; struct mp_list
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">// File: boost_mp11.cppm
+<pre class="rouge highlight"><code data-lang="cpp"><span class="c1">// File: boost_mp11.cppm</span>
 
-module; // Global module fragment
-#define BOOST_MP11_INTERFACE_UNIT     // We want headers to actually declare entities
+<span class="n">module</span><span class="p">;</span> <span class="c1">// Global module fragment</span>
+<span class="cp">#define BOOST_MP11_INTERFACE_UNIT     // We want headers to actually declare entities
 #define BOOST_CONFIG_SKIP_IMPORT_STD  // Don't import std in compatibility headers
-#include &lt;cassert&gt; // Some standard library headers need to be included for their macros
+#include</span> <span class="cpf">&lt;cassert&gt;</span><span class="c1"> // Some standard library headers need to be included for their macros</span><span class="cp">
+</span>
+<span class="k">export</span> <span class="n">module</span> <span class="n">boost</span><span class="p">.</span><span class="n">mp11</span><span class="p">;</span>
 
-export module boost.mp11;
-
-import std;               // Import should be first
-#include &lt;boost/mp11.hpp&gt; // All entities declared here get attached to the named module
-                          // This issues a compiler warning that should be suppressed</code></pre>
+<span class="n">import</span> <span class="n">std</span><span class="p">;</span>               <span class="c1">// Import should be first</span>
+<span class="cp">#include</span> <span class="cpf">&lt;boost/mp11.hpp&gt;</span><span class="c1"> // All entities declared here get attached to the named module</span><span class="cp">
+</span>                          <span class="c1">// This issues a compiler warning that should be suppressed</span></code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -750,38 +965,46 @@ import std;               // Import should be first
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">// File: boost/mp11/list.hpp
-// Compatibility header and includes skipped for brevity
+<pre class="rouge highlight"><code data-lang="cpp"><span class="c1">// File: boost/mp11/list.hpp</span>
+<span class="c1">// Compatibility header and includes skipped for brevity</span>
 
-template&lt;class... T&gt; struct mp_list // No export macro required
-{
-};</code></pre>
+<span class="k">template</span><span class="o">&lt;</span><span class="k">class</span><span class="o">...</span> <span class="nc">T</span><span class="p">&gt;</span> <span class="k">struct</span> <span class="nc">mp_list</span> <span class="c1">// No export macro required</span>
+<span class="p">{</span>
+<span class="p">};</span></code></pre>
 </div>
 </div>
 <div class="paragraph">
-<p><code>boost_mp11.cppm</code> becomes:</p>
+<p>The interface unit becomes:</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">// File: boost_mp11.cppm
-module; // Global module fragment
-#define BOOST_MP11_INTERFACE_UNIT // We want headers to actually declare entities
-                                  // No BOOST_CONFIG_SKIP_IMPORT_STD: import std is fine in the global module fragment
-#include &lt;cassert&gt;        // Some standard library headers need to be included for their macros
-#include &lt;boost/mp11.hpp&gt; // All entities are attached to the global module.
+<pre class="rouge highlight"><code data-lang="cpp"><span class="c1">// File: boost_mp11.cppm</span>
+<span class="n">module</span><span class="p">;</span> <span class="c1">// Global module fragment</span>
+<span class="cp">#define BOOST_MP11_INTERFACE_UNIT // We want headers to actually declare entities
+</span>                                  <span class="c1">// No BOOST_CONFIG_SKIP_IMPORT_STD: import std is fine in the global module fragment</span>
+<span class="cp">#include</span> <span class="cpf">&lt;cassert&gt;</span><span class="c1">        // Some standard library headers need to be included for their macros</span><span class="cp">
+#include</span> <span class="cpf">&lt;boost/mp11.hpp&gt;</span><span class="c1"> // All entities are attached to the global module.</span><span class="cp">
+</span>
+<span class="k">export</span> <span class="n">module</span> <span class="n">boost</span><span class="p">.</span><span class="n">mp11</span><span class="p">;</span>
 
-export module boost.mp11;
-
-// List all symbols we want to export
-export namespace boost::mp11 {
-using mp11::list;
-}</code></pre>
+<span class="c1">// List all symbols we want to export</span>
+<span class="k">export</span> <span class="k">namespace</span> <span class="n">boost</span><span class="o">::</span><span class="n">mp11</span> <span class="p">{</span>
+<span class="k">using</span> <span class="n">mp11</span><span class="o">::</span><span class="n">list</span><span class="p">;</span>
+<span class="p">}</span></code></pre>
 </div>
 </div>
 <div class="paragraph">
-<p>This technique doesn&#8217;t attach names to the named module, with the pros and cons this brings. Additionally, it hits two troublesome bugs in MSVC:
-* Some templated type aliases, like <code>mp_size_t</code>, cause trouble in importers under some circumstances: <a href="https://developercommunity.visualstudio.com/t/MSVC-C20-modules:-export-using-templat/10826448:">see bug report</a>.
-* Template specializations seem to always be discarded, even if they are decl-reachable: <a href="https://developercommunity.visualstudio.com/t/C20-modules:-specialzations-in-the-glo/10826499:">see bug report</a>.</p>
+<p>This technique doesn&#8217;t attach names to the named module, with the pros and cons this brings. Additionally, it hits two troublesome bugs in MSVC:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Some templated type aliases, like <code>mp_size_t</code>, cause trouble in importers under some circumstances: <a href="https://developercommunity.visualstudio.com/t/MSVC-C20-modules:-export-using-templat/10826448:">see bug report</a>.</p>
+</li>
+<li>
+<p>Template specializations seem to always be discarded, even if they are decl-reachable: <a href="https://developercommunity.visualstudio.com/t/C20-modules:-specialzations-in-the-glo/10826499:">see bug report</a>.</p>
+</li>
+</ul>
 </div>
 </div>
 <div class="sect2">
@@ -846,10 +1069,10 @@ using mp11::list;
 <div id="footnotes">
 <hr>
 <div class="footnote" id="_footnotedef_1">
-<a href="#_footnoteref_1">1</a>. It&#8217;s unlikely that end users consume Charconv, since the standard library functions are available in C++17 and higher. I chose Charconv because it&#8217;s compiled, relatively small, has few dependencies, and is a dependency of other libraries, like Boost.Json
+<a href="#_footnoteref_1">1</a>. It&#8217;s unlikely that end users consume Charconv, since the standard library functions are available in C++17 and higher. I chose Charconv because it&#8217;s compiled, relatively small, has few dependencies, and is a dependency of other libraries, like Boost.Json.
 </div>
 <div class="footnote" id="_footnotedef_2">
-<a href="#_footnoteref_2">2</a>. Anything declared after <code>export module boost.xyz;</code> is considered attached to <code>boost.xyz</code>, and must be defined in <code>boost.xyz</code>, and nowhere else. This enforcement makes ODR violations easier to detect, and reduces the amount of work required by the compiler. On the other hand, declarations in the global module fragment or declarations prefixed by <code>extern "C++"</code> are considered attached to the global module, and are not subject to the former rules. See <a href="https://en.cppreference.com/w/cpp/language/modules:">the cppreference section on module ownership</a> for more info
+<a href="#_footnoteref_2">2</a>. Anything declared after <code>export module boost.xyz;</code> is considered attached to <code>boost.xyz</code>, and must be defined in <code>boost.xyz</code>, and nowhere else. This enforcement makes ODR violations easier to detect, and reduces the amount of work required by the compiler. On the other hand, declarations in the global module fragment or declarations prefixed by <code>extern "C++"</code> are considered attached to the global module, and are not subject to the former rules. See <a href="https://en.cppreference.com/w/cpp/language/modules:">the cppreference section on module ownership</a> for more info.
 </div>
 <div class="footnote" id="_footnotedef_3">
 <a href="#_footnoteref_3">3</a>. To avoid depending on Boost.Config, Boost.Mp11 has its own standard library compatibility headers.
@@ -857,15 +1080,8 @@ using mp11::list;
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2025-01-29 16:40:14 UTC
+Last updated 2025-01-29 16:59:51 UTC
 </div>
 </div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.18.3/highlight.min.js"></script>
-<script>
-if (!hljs.initHighlighting.called) {
-  hljs.initHighlighting.called = true
-  ;[].slice.call(document.querySelectorAll('pre.highlight > code[data-lang]')).forEach(function (el) { hljs.highlightBlock(el) })
-}
-</script>
 </body>
 </html>
