@@ -1,5 +1,5 @@
 = C++20 modules and Boost: a prototype
-:source-highlighter: highlightjs
+:source-highlighter: rouge
 :toc: left
 Rubén Pérez (@anarthal)
 
@@ -9,10 +9,10 @@ I've written a small proof-of-concept that allows Boost to be consumed as pass:[
 
 *TL;DR*:
 
-* We chose to support `#include <boost/X>` and `import boost.X` using the same Boost code, using a `BOOST_USE_MODULES` macro switch. When using modules, we consume the standard library with `import std`.
-* We propose a "compatibility header" approach, where `#include <boost/X>` translates into `import boost.X` transparently when `BOOST_USE_MODULES` is defined. This facilitates migration.
+* We chose to support `#include <boost/xyz.hpp>` and `import boost.xyz` using the same Boost code, using a `BOOST_USE_MODULES` macro switch. When using modules, we consume the standard library with `import std`.
+* We propose a "compatibility header" approach, where `#include <boost/xyz.hpp>` translates into `import boost.xyz` transparently when `BOOST_USE_MODULES` is defined. This facilitates migration.
 * Implementing this requires changes in the libraries. They are manageable but increase maintenance effort.
-* Build-time benchmarks are promising, observing a x3 speedup in some test suites.
+* Build-time benchmarks are promising, observing xref:bench[a 3x speedup in some test suites].
 * The ecosystem is not ready yet: CMake's support for `import std` is still experimental, Visual Studio CMake generators don't work with `import std`, and MSVC has several bugs that are hard to work around. We've decided to wait until these points are fixed before merging this proposal into Boost.
 
 
@@ -21,7 +21,7 @@ I've written a small proof-of-concept that allows Boost to be consumed as pass:[
 This prototype includes changes to the following Boost repositories:
 
 * Boost.Mp11 (proof-of-concept for header-only libraries) https://github.com/boostorg/mp11/pull/104
-* Boost.Charconvfootnote:[It's unlikely that end users consume Charconv, since the standard library functions are available in pass:[C++17] and higher. I chose Charconv because it's compiled, relatively small, has few dependencies, and is a dependency of other libraries, like Boost.Json] (proof-of-concept for compiled libraries): https://github.com/boostorg/charconv/pull/255
+* Boost.Charconvfootnote:[It's unlikely that end users consume Charconv, since the standard library functions are available in pass:[C++17] and higher. I chose Charconv because it's compiled, relatively small, has few dependencies, and is a dependency of other libraries, like Boost.Json.] (proof-of-concept for compiled libraries): https://github.com/boostorg/charconv/pull/255
 * Boost.Core (minimal subset to support test suites in the above two): https://github.com/anarthal/core/tree/feature/cxx20-modules
 * Boost.Assert (minimal subset to support test suites in the above two): https://github.com/anarthal/assert/tree/feature/cxx20-modules
 * Boost.ThrowException (minimal subset to support test suites in the above two): https://github.com/anarthal/throw_exception/tree/feature/cxx20-modules
@@ -69,11 +69,11 @@ At the time of writing, standard library implementations support *including* sta
 
 In general, we've chosen not to support this in the general case: you should *either include or import Boost, but not both*. Compatibility headers help maintain this consistency across your project.
 
-This choice allows libraries to attach their declarations to their named module footnote:[Anything declared after `export module boost.xyz;` is considered attached to `boost.xyz`, and must be defined in `boost.xyz`, and nowhere else. This enforcement makes ODR violations easier to detect, and reduces the amount of work required by the compiler. On the other hand, declarations in the global module fragment or declarations prefixed by `extern "C++"` are considered attached to the global module, and are not subject to the former rules. See https://en.cppreference.com/w/cpp/language/modules:[the cppreference section on module ownership] for more info]. This makes ODR violations easier to detect and may speed up compilation.
+This choice allows libraries to attach their declarations to their named module footnote:[Anything declared after `export module boost.xyz;` is considered attached to `boost.xyz`, and must be defined in `boost.xyz`, and nowhere else. This enforcement makes ODR violations easier to detect, and reduces the amount of work required by the compiler. On the other hand, declarations in the global module fragment or declarations prefixed by `extern "C++"` are considered attached to the global module, and are not subject to the former rules. See https://en.cppreference.com/w/cpp/language/modules:[the cppreference section on module ownership] for more info.]. This makes ODR violations easier to detect and may speed up compilation.
 
-Some libraries may still want to support mixing imports and includes. Compiled libraries with tests that require access to implementation details might require this. See xref:compiled[the section on compiled libraries] for more info.
+Some libraries may still want to support mixing imports and includes. Compiled libraries with tests that require access to implementation details are an example of this. See xref:compiled[this section] for more info.
 
-Some libraries need to make macros available to users. Macros must be made available using traditional includes even when using modules, since these don't know about macros. In the prototype, *compatibility headers make public macros available* in addition to importing the relevant module. For example, Boost.Core has a lightweight testing framework used in unit tests that relies on macros. The `boost.core` module exports the required pass:[C++] entities, with https://github.com/anarthal/core/blob/feature/cxx20-modules/include/boost/core/lightweight_test.hpp:[the header] performing the relevant imports and macro definitions.
+Some libraries need to make macros available to users. Macros must always be exported using traditional includes, since modules don't know anything about macros. In the prototype, *compatibility headers make public macros available* in addition to importing the relevant module. For example, Boost.Core has a lightweight testing framework used in unit tests that relies on macros. The `boost.core` module exports the required pass:[C++] entities, with https://github.com/anarthal/core/blob/feature/cxx20-modules/include/boost/core/lightweight_test.hpp:[the header] performing the relevant imports and macro definitions.
 
 [#compatibility-headers]
 === Compatibility headers
@@ -140,8 +140,9 @@ For example: footnote:[To avoid depending on Boost.Config, Boost.Mp11 has its ow
 #else
 
 // Includes
-#include <boost/mp11/detail/config.hpp> // Our own includes stay as they are
-#include <boost/config/std/type_traits.hpp> // Replace stdlib includes by compatibility headers
+#include <boost/mp11/detail/config.hpp>     // Our own includes stay as they are
+#include <boost/config/std/type_traits.hpp> // Replace stdlib includes
+                                            // by compatibility headers
 
 namespace boost::mp11 { /* regular declarations */ }
 
@@ -198,7 +199,7 @@ template<class... T> struct mp_list // No export macro required
 
 
 
-`boost_mp11.cppm` becomes:
+The interface unit becomes:
 
 [source,cpp]
 ------
@@ -218,6 +219,7 @@ using mp11::list;
 ------
 
 This technique doesn't attach names to the named module, with the pros and cons this brings. Additionally, it hits two troublesome bugs in MSVC:
+
 * Some templated type aliases, like `mp_size_t`, cause trouble in importers under some circumstances: https://developercommunity.visualstudio.com/t/MSVC-C20-modules:-export-using-templat/10826448:[see bug report].
 * Template specializations seem to always be discarded, even if they are decl-reachable: https://developercommunity.visualstudio.com/t/C20-modules:-specialzations-in-the-glo/10826499:[see bug report].
 
