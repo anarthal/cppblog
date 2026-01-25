@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="generator" content="Asciidoctor 2.0.20">
 <meta name="author" content="Rubén Pérez (@anarthal)">
-<title>C++20 modules and Boost: an analysis</title>
+<title>C++20 modules: findings and thoughts</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700">
 <style>
 /*! Asciidoctor default stylesheet | MIT License | https://asciidoctor.org */
@@ -433,23 +433,238 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 #footer-text{color:rgba(0,0,0,.6);font-size:.9em}}
 @media amzn-kf8{#header,#content,#footnotes,#footer{padding:0}}
 </style>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.18.3/styles/github.min.css">
+<style>
+pre.rouge table td { padding: 5px; }
+pre.rouge table pre { margin: 0; }
+pre.rouge .cm {
+  color: #999988;
+  font-style: italic;
+}
+pre.rouge .cp {
+  color: #999999;
+  font-weight: bold;
+}
+pre.rouge .c1 {
+  color: #999988;
+  font-style: italic;
+}
+pre.rouge .cs {
+  color: #999999;
+  font-weight: bold;
+  font-style: italic;
+}
+pre.rouge .c, pre.rouge .ch, pre.rouge .cd, pre.rouge .cpf {
+  color: #999988;
+  font-style: italic;
+}
+pre.rouge .err {
+  color: #a61717;
+  background-color: #e3d2d2;
+}
+pre.rouge .gd {
+  color: #000000;
+  background-color: #ffdddd;
+}
+pre.rouge .ge {
+  color: #000000;
+  font-style: italic;
+}
+pre.rouge .gr {
+  color: #aa0000;
+}
+pre.rouge .gh {
+  color: #999999;
+}
+pre.rouge .gi {
+  color: #000000;
+  background-color: #ddffdd;
+}
+pre.rouge .go {
+  color: #888888;
+}
+pre.rouge .gp {
+  color: #555555;
+}
+pre.rouge .gs {
+  font-weight: bold;
+}
+pre.rouge .gu {
+  color: #aaaaaa;
+}
+pre.rouge .gt {
+  color: #aa0000;
+}
+pre.rouge .kc {
+  color: #000000;
+  font-weight: bold;
+}
+pre.rouge .kd {
+  color: #000000;
+  font-weight: bold;
+}
+pre.rouge .kn {
+  color: #000000;
+  font-weight: bold;
+}
+pre.rouge .kp {
+  color: #000000;
+  font-weight: bold;
+}
+pre.rouge .kr {
+  color: #000000;
+  font-weight: bold;
+}
+pre.rouge .kt {
+  color: #445588;
+  font-weight: bold;
+}
+pre.rouge .k, pre.rouge .kv {
+  color: #000000;
+  font-weight: bold;
+}
+pre.rouge .mf {
+  color: #009999;
+}
+pre.rouge .mh {
+  color: #009999;
+}
+pre.rouge .il {
+  color: #009999;
+}
+pre.rouge .mi {
+  color: #009999;
+}
+pre.rouge .mo {
+  color: #009999;
+}
+pre.rouge .m, pre.rouge .mb, pre.rouge .mx {
+  color: #009999;
+}
+pre.rouge .sa {
+  color: #000000;
+  font-weight: bold;
+}
+pre.rouge .sb {
+  color: #d14;
+}
+pre.rouge .sc {
+  color: #d14;
+}
+pre.rouge .sd {
+  color: #d14;
+}
+pre.rouge .s2 {
+  color: #d14;
+}
+pre.rouge .se {
+  color: #d14;
+}
+pre.rouge .sh {
+  color: #d14;
+}
+pre.rouge .si {
+  color: #d14;
+}
+pre.rouge .sx {
+  color: #d14;
+}
+pre.rouge .sr {
+  color: #009926;
+}
+pre.rouge .s1 {
+  color: #d14;
+}
+pre.rouge .ss {
+  color: #990073;
+}
+pre.rouge .s, pre.rouge .dl {
+  color: #d14;
+}
+pre.rouge .na {
+  color: #008080;
+}
+pre.rouge .bp {
+  color: #999999;
+}
+pre.rouge .nb {
+  color: #0086B3;
+}
+pre.rouge .nc {
+  color: #445588;
+  font-weight: bold;
+}
+pre.rouge .no {
+  color: #008080;
+}
+pre.rouge .nd {
+  color: #3c5d5d;
+  font-weight: bold;
+}
+pre.rouge .ni {
+  color: #800080;
+}
+pre.rouge .ne {
+  color: #990000;
+  font-weight: bold;
+}
+pre.rouge .nf, pre.rouge .fm {
+  color: #990000;
+  font-weight: bold;
+}
+pre.rouge .nl {
+  color: #990000;
+  font-weight: bold;
+}
+pre.rouge .nn {
+  color: #555555;
+}
+pre.rouge .nt {
+  color: #000080;
+}
+pre.rouge .vc {
+  color: #008080;
+}
+pre.rouge .vg {
+  color: #008080;
+}
+pre.rouge .vi {
+  color: #008080;
+}
+pre.rouge .nv, pre.rouge .vm {
+  color: #008080;
+}
+pre.rouge .ow {
+  color: #000000;
+  font-weight: bold;
+}
+pre.rouge .o {
+  color: #000000;
+  font-weight: bold;
+}
+pre.rouge .w {
+  color: #bbbbbb;
+}
+pre.rouge {
+  background-color: #f8f8f8;
+}
+</style>
 </head>
 <body class="article toc2 toc-left">
 <div id="header">
-<h1>C++20 modules and Boost: an analysis</h1>
+<h1>C++20 modules: findings and thoughts</h1>
 <div class="details">
 <span id="author" class="author">Rubén Pérez (@anarthal)</span><br>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
 <ul class="sectlevel1">
-<li><a href="#_a_mental_model_for_modules">A mental model for modules</a></li>
-<li><a href="#_compiler_and_tooling_support">Compiler and tooling support</a></li>
-<li><a href="#_how_to_modularize_a_library">How to modularize a library</a></li>
-<li><a href="#_measuring_build_time_benefits">Measuring build-time benefits</a></li>
-<li><a href="#_consuming_boost_using_modules">Consuming Boost using modules</a></li>
-<li><a href="#_conclusion">Conclusion</a></li>
+<li><a href="#_ide_support">IDE support</a></li>
+<li><a href="#_on_dependency_scanning">On dependency scanning</a></li>
+<li><a href="#_how_to_generate_bmis">How to generate BMIs</a></li>
+<li><a href="#_header_units">Header units</a></li>
+<li><a href="#_include_translation">Include translation</a></li>
+<li><a href="#_export_using_and_decl_reachability">export using and decl-reachability</a></li>
+<li><a href="#_references">References</a></li>
 </ul>
 </div>
 </div>
@@ -457,312 +672,295 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div id="preamble">
 <div class="sectionbody">
 <div class="paragraph">
-<p>This document contains my findings when playing with C++20 modules and the possibility of a modular Boost. The analysis is oriented towards analyzing the costs and benefits of building a distributing existing Boost libraries as C++20 modules, so that users can write <code>import boost</code> in their code. The analysis focuses on header-only libraries.</p>
+<p>This page contains a set of concepts and interesting findings I&#8217;ve
+performed during my investigation about C++20 modules.</p>
 </div>
 <div class="paragraph">
-<p>The experiment is available in <a href="https://github.com/anarthal/boost-modules-bench">this repository</a>.</p>
-</div>
-<div class="paragraph">
-<p>Update: <a href="https://anarthal.github.io/cppblog/modules2">a follow-up post</a> is now available.</p>
+<p>Expect this page to change a lot over these days as I learn more!</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_a_mental_model_for_modules">A mental model for modules</h2>
+<h2 id="_ide_support">IDE support</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>Quick recap: modules are a C++20 language-level construct that aims to provide better encapsulation and reduce build times. Modules add a new translation unit type: module units. Modules are built into an artifact called BMI.</p>
-</div>
-<div class="paragraph">
-<p>In our context, as an overly simplification, we can think of them as "well behaved precompiled headers", with the following differences:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>You can import as many modules as you want, while you can only include one precompiled header.</p>
-</li>
-<li>
-<p>Declarations are not exported from modules by default - <code>export</code> needs to be used on the declarations to be exported.</p>
-</li>
-<li>
-<p>Macros can&#8217;t be exported from modules.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Like PCHs, BMIs are highly non-portable and must be built by the library user (and not by us), and need some cooperation from the build system. For header-only libraries, this is <strong>the user&#8217;s build system</strong> (e.g. CMake), not the one we use (b2).</p>
-</div>
-<div class="paragraph">
-<p>For each <code>import</code> the user places in their TU, the compiler needs a corresponding BMI. This introduces a build-time dependency (like precompiled headers do). The build system needs to scan TUs for imports to build the dependency graph.</p>
-</div>
-<div class="paragraph">
-<p>Header units (<code>import &lt;boost/asio.hpp&gt;;</code>) are supposed to be an intermediate between headers and modules. I haven&#8217;t explored them because they don&#8217;t have CMake support, and are supposedly slower.</p>
+<p>Clangd-based IDEs like VSCode and CLion provide experimental support for C++20 modules. However, the tooling has notable limitations. Binary Module Interfaces (BMIs) are generated on demand, and the integration with build systems remains fragile. This means that while basic use cases will work, you may encounter issues in more complex scenarios. For a detailed discussion on the current state of clangd support, see this <a href="#clangd-modules">[clangd-modules]</a>.</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_compiler_and_tooling_support">Compiler and tooling support</h2>
+<h2 id="_on_dependency_scanning">On dependency scanning</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>At the time of writing this article, support for modules is in its early stages. Concretely, when using CMake, the following requirements apply:</p>
+<p>The idea of dependency scanning is: given a set of translation units, find out:</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p>CMake 3.28 (module stable support has been out for 2 releases).</p>
+<p>What modules does each TU provide? There is no linking between file names and provided modules, so this step is required.</p>
 </li>
 <li>
-<p>MSVC 14.34, clang-16, or gcc-14 (this hasn&#8217;t been released yet, but support has already been merged).</p>
-</li>
-<li>
-<p>When building for UNIX, Ninja 1.11.</p>
+<p>What modules and header units does each TU require?</p>
 </li>
 </ul>
 </div>
 <div class="paragraph">
-<p>Note that build2 has support for modules and even header units (where CMake hasn&#8217;t). As we only ship CMake files, I haven&#8217;t investigated build2 further.</p>
+<p>This information is required by build systems to build the dependency graph,
+and by tools like clangd, which require having available BMIs to do their task.
+This is what <code>clang-scan-deps</code> is for.</p>
 </div>
 <div class="paragraph">
-<p>C++23 enables <code>import std</code>, which is supposed to improve compile-times. This is currently less developed:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>MSVC standard library and libc++ ship with standard modules, while libstdc++ doesn&#8217;t support them yet.</p>
-</li>
-<li>
-<p>In both cases, the library ships with the module source code, and the user needs to build the modules themselves.</p>
-</li>
-<li>
-<p>There is intention from CMake to add support for building standard modules in an easy way, but there is nothing yet. Manual approaches are possible for testing but not adequate for production.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>No IDE supports modules yet (<code>clangd-19</code> enters an infinite loop when it sees an <code>import</code>), which disables autocompletion and highlighting.</p>
-</div>
-<div class="paragraph">
-<p>This means that this feature is very unlikely to be used in production right now. We may encounter early adopters and pet projects, but not many industry users yet.</p>
+<p>The tricky part is that scanning requires a fully capable preprocessor,
+because you can have an import in an include, or guarded by an ifdef.</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_how_to_modularize_a_library">How to modularize a library</h2>
+<h2 id="_how_to_generate_bmis">How to generate BMIs</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>Before measuring compile times, we need a familiar library to be consumed as a module. While Matt Borland and John Maddock have done a great job writing a modular version of Boost.Math, I don&#8217;t have realistic, slow-to-compile code to perform adequate benchmarks. So I&#8217;ve gone ahead and modularized standalone Asio.</p>
+<p>You may need to generate a BMI for a library that you didn&#8217;t build,
+because BMI compatibility is stricter than ABI compatibility.
+For instance, TUs with different C++ standard level tend to
+mix well at the ABI-level, but BMIs with different C++ standard level
+are incompatible.</p>
 </div>
 <div class="paragraph">
-<p>While Math&#8217;s approach works, it&#8217;s intrusive and requires a lot of work. An easier approach (employed by libc++) is exporting the required names with <code>using</code> declarations:</p>
+<p>For this reason, build systems should be able to generate BMIs for libraries
+built by other build systems. This is currently not the case, and requires
+adopting metadata formats that communicate enough information to achieve this.
+Currently under study by SG15.</p>
+</div>
+<div class="paragraph">
+<p>A key concept here is <strong>local preprocessor arguments</strong>: these are the arguments
+required to produce a BMI, but are not required to be consistent across other TUs.
+If our build system knew these, it can compute the command line to generate
+a BMI like this:</p>
+</div>
+<div class="paragraph">
+<p>BMI command line = importer command line - importer local args + importee local args</p>
+</div>
+<div class="paragraph">
+<p>Example: <code>-DBOOST_ASIO_CONCURRENCY_HINT=1</code> would be a local preprocessor argument.</p>
+</div>
+<div class="paragraph">
+<p><strong>TBC: this is not functional as of today yet. When do we expect it?</strong></p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_header_units">Header units</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>They were supposed to make the transition to modules easier, but their implementability
+is in question. They&#8217;re currently unsupported by CMake, and there seems
+to be no activity on the issue as of the time of writing <a href="#cmake-header-units">[cmake-header-units]</a>.</p>
+</div>
+<div class="paragraph">
+<p>They are currently supported by some compilers, but you need to use the command line.
+For example, with clang, if you specify a <code>-fmodule-file=iostream.pcm</code>, you can <code>import &lt;iostream&gt;;</code>.</p>
+</div>
+<div class="paragraph">
+<p>They are complex from a build system perspective: computing the dependency
+graph depends on the preprocessor state, but importing a header can modify preprocessor state.
+Build performance is yet to be known (see <a href="#challenges-header-units">[challenges-header-units]</a>).</p>
+</div>
+<div class="paragraph">
+<p>They might be implementable after agreeing on a metadata format that allows specifying
+which headers are importable, their local preprocessor arguments, and so on.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_include_translation">Include translation</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The standard allows certain includes to be automatically translated into imports.
+This is, <code>#include &lt;iostream&gt;</code> may be translated into <code>import &lt;iostream&gt;;</code>.
+Note that <strong>this NEVER translates to <code>import std</code></strong>, as modules don&#8217;t export macros,
+so this would break in the case of headers like <code>&lt;cerrno&gt;</code> or <code>&lt;cassert&gt;</code>.</p>
+</div>
+<div class="paragraph">
+<p>This is supported in:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>clang: when including standard library headers in the GMF, and only
+when BMIs for these headers are built and made available explicitly.</p>
+</li>
+<li>
+<p>MSVC: this must be explicitly enabled with <code>/translateIncludes</code>,
+and a MSVC-specific JSON file with metadata is required.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>All in all, this is currently neither clean nor transparent.</p>
+</div>
+<div class="paragraph">
+<p>P3041R0 proposes specifying to the compiler somehow that a header
+is subsumed by either a named module or another header.
+This would be a piece of metadata authored by the library author,
+who knows the specifics of a library. For instance:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>&lt;iostream&gt;</code> is fully subsumed by the <code>std</code> named module.</p>
+</li>
+<li>
+<p><code>&lt;cerrno&gt;</code> is subsumed by the <code>std</code> named module, plus some macro definitions.</p>
+</li>
+<li>
+<p><code>&lt;boost/mp11.hpp&gt;</code> is subsumed by the <code>boost.mp11</code> module,
+plus a macro definition for its <code>BOOST_MP11_VERSION</code> macro.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>All in all, I think this is the transition we need.
+The library author is the person that has enough information to
+determine this translation.</p>
+</div>
+<div class="paragraph">
+<p>At the moment, I&#8217;m trying to emulate this in Boost headers
+with some macro machinery:</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlightjs highlight"><code class="language-cpp hljs" data-lang="cpp">// File asio.cxx. Defines how to build Asio as a module so it can be imported
-module;
+<pre class="rouge highlight"><code data-lang="cpp"><span class="c1">// Replace the whole header content by an import if the user</span>
+<span class="c1">// is doing modules</span>
+<span class="cp">#if !defined(BOOST_XYZ_SOURCE) &amp;&amp; defined(BOOST_USE_MODULES)
+</span><span class="n">import</span> <span class="n">boost</span><span class="p">.</span><span class="n">xyz</span><span class="p">;</span>
+<span class="cp">#else
+</span>
+<span class="c1">// Regular header</span>
 
-#include &lt;asio.hpp&gt;
-
-export module asio;
-
-namespace asio {
-export using asio::io_context;
-export using asio::post;
-export using asio::any_io_executor;
-// ...
-}</code></pre>
+<span class="cp">#endif</span></code></pre>
 </div>
-</div>
-<div class="paragraph">
-<p>There are a number of caveats with this approach though:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p><code>constexpr</code> variables need to be <code>inline</code> to be exported. This is not the case in most libraries, although it should be. This requires submitting PRs to libraries. As mentioned by <a href="https://github.com/opensdh">@opensdh</a>, there is <a href="https://open-std.org/jtc1/sc22/wg21/docs/papers/2023/p2808r0.html">a proposal</a> to make this easier.</p>
-</li>
-<li>
-<p>Some libraries define template specializations in other namespaces, like <code>std</code>. With the current language rules, these cause trouble when employing <code>export using</code>. See <a href="https://anarthal.github.io/cppblog/modules2#template-spec">this section on the follow-up article</a> for more info about this topic.</p>
-</li>
-<li>
-<p>Making a definition available using <code>import</code> in some TUs and <code>#include</code> in others seems to work when employing the <code>export using</code> technique, but may cause ODR violations otherwise, as pointed by Peter Dimov. This is troublesome considering the above point.</p>
-</li>
-</ul>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_measuring_build_time_benefits">Measuring build-time benefits</h2>
+<h2 id="_export_using_and_decl_reachability">export using and decl-reachability</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>The experiment involves building a simple, async, coroutine-based server that listens for connections, reads and writes using SSL.</p>
+<p>As you may know, modules introduce the concept of decl-reachability.
+The idea is that entities in the GMF are discarded by the compiler
+(and not included in the BMI) if they are not decl-reachable from
+the entities that are exported from the module.</p>
 </div>
 <div class="paragraph">
-<p>As with PCHs, only executables with several translation units including similar headers may see benefits. The benchmark involves adding translation units, all of them building the same server, with and without modules.</p>
-</div>
-<div class="paragraph">
-<p>Benchmark conditions:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>clang-19 (Linux)</p>
-</li>
-<li>
-<p>Release CMake build</p>
-</li>
-<li>
-<p>Building with 3 cores  to measure the effects of parallelism.</p>
-</li>
-<li>
-<p>Modular builds use Asio and the standard library as modules. The time to build such modules is included in the benchmark.</p>
-</li>
-</ul>
-</div>
-<table class="tableblock frame-all grid-all stretch">
-<colgroup>
-<col style="width: 33.3333%;">
-<col style="width: 33.3333%;">
-<col style="width: 33.3334%;">
-</colgroup>
-<thead>
-<tr>
-<th class="tableblock halign-left valign-top">Number of translation units</th>
-<th class="tableblock halign-left valign-top">Build time (modules)</th>
-<th class="tableblock halign-left valign-top">Build time (headers)</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">1 TU</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">09.124</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">06.909</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">2 TU</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">10.708</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">07.446</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">3 TU</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">12.280</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">09.773</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">4 TU</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">14.786</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">16.057</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">5 TU</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">16.065</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">16.631</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">6 TU</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">16.374</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">17.972</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">7 TU</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">20.966</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">24.695</p></td>
-</tr>
-</tbody>
-</table>
-<div class="paragraph">
-<p>Benefits are not as big as expected. Compiling with <code>-ftime-trace</code> with modules shows the following:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p>The slower to build artifacts are the <code>std</code> module, the Asio module and the server TUs.</p>
-</li>
-<li>
-<p>The <code>std</code> and <code>asio</code> modules build in parallel (Asio uses includes for <code>std</code>). The server TUs require the module objects and won&#8217;t start building until the former are ready.</p>
-</li>
-<li>
-<p>Each of the two modules take around 4s to build. This is spent including headers and parsing declarations.</p>
-</li>
-<li>
-<p>Building server TUs take 6s in total: 2s in the compiler&#8217;s frontend (performing instantiations) and 4s in the backend (performing optimizations).</p>
-</li>
-<li>
-<p>The header version takes 9s. 3s are spent parsing headers, which is not present in the module version.</p>
-</li>
-<li>
-<p>Rebuilds (as happen during local development) are significantly faster in the module version - see <a href="https://anarthal.github.io/cppblog/modules2#rebuilds">my follow-up post</a> for details.</p>
-</li>
-</ul>
-</div>
-<div class="paragraph">
-<p>Although non-zero, I find the gains slightly disappointing. These may be bigger for bigger projects, debug builds or different libraries. The benefits on re-builds may be enough for some users to consider modules, though.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_consuming_boost_using_modules">Consuming Boost using modules</h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>If we write module code for some Boost libraries, we need to ship the code and provide users with a way to build and consume it. As we ship CMake bindings with our libraries, the obvious path is to enhance this to include building Boost modules.</p>
-</div>
-<div class="paragraph">
-<p>This is what the end user&#8217;s CMake could look like:</p>
+<p>This usually translates into "entities introduced by headers that
+are not used within the module are discarded", which sounds logical.
+However, you might find surprises. I found this problem with a class
+that implements the tuple protocol:</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlightjs highlight"><code class="language-cmake hljs" data-lang="cmake"># Same as today
-find_package(Boost REQUIRED)
+<pre class="rouge highlight"><code data-lang="cpp"><span class="c1">// mylib.hpp</span>
+<span class="cp">#include</span> <span class="cpf">&lt;cstddef&gt;</span><span class="cp">
+#include</span> <span class="cpf">&lt;tuple&gt;</span><span class="cp">
+#include</span> <span class="cpf">&lt;type_traits&gt;</span><span class="cp">
+</span>
+<span class="k">namespace</span> <span class="n">mylib</span> <span class="p">{</span>
 
-# A function defined by find_package(Boost). Builds the Boost.Asio module into a target named asio_module
-add_boost_asio_module(asio_module)
-# Possibly set compile flags required by dependent targets
+<span class="k">class</span> <span class="nc">Result</span> <span class="p">{</span>
+  <span class="kt">int</span> <span class="n">value_</span> <span class="p">{};</span>
+<span class="nl">public:</span>
+  <span class="n">Result</span><span class="p">()</span> <span class="o">=</span> <span class="k">default</span><span class="p">;</span>
+  <span class="kt">int</span><span class="o">&amp;</span> <span class="n">getValue</span><span class="p">()</span> <span class="o">&amp;</span> <span class="p">{</span> <span class="k">return</span> <span class="n">value_</span><span class="p">;</span> <span class="p">}</span>
+  <span class="k">const</span> <span class="kt">int</span><span class="o">&amp;</span> <span class="n">getValue</span><span class="p">()</span> <span class="k">const</span><span class="o">&amp;</span> <span class="p">{</span> <span class="k">return</span> <span class="n">value_</span><span class="p">;</span> <span class="p">}</span>
+  <span class="kt">int</span><span class="o">&amp;&amp;</span> <span class="n">getValue</span><span class="p">()</span> <span class="o">&amp;&amp;</span> <span class="p">{</span> <span class="k">return</span> <span class="n">std</span><span class="o">::</span><span class="n">move</span><span class="p">(</span><span class="n">value_</span><span class="p">);</span> <span class="p">}</span>
+<span class="p">};</span>
 
-# Use the module
-add_executable(server main.cpp)
-target_link_libraries(server PRIVATE asio_module)</code></pre>
+<span class="c1">// Required by the tuple protocol</span>
+<span class="k">template</span> <span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">size_t</span> <span class="n">I</span><span class="p">&gt;</span>
+<span class="kt">int</span><span class="o">&amp;</span> <span class="n">get</span><span class="p">(</span><span class="n">Result</span><span class="o">&amp;</span> <span class="n">r</span><span class="p">)</span> <span class="p">{</span> <span class="k">return</span> <span class="n">r</span><span class="p">.</span><span class="n">getValue</span><span class="p">();</span> <span class="p">}</span>
+
+<span class="k">template</span> <span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">size_t</span> <span class="n">I</span><span class="p">&gt;</span>
+<span class="k">const</span> <span class="kt">int</span><span class="o">&amp;</span> <span class="n">get</span><span class="p">(</span><span class="k">const</span> <span class="n">Result</span><span class="o">&amp;</span> <span class="n">r</span><span class="p">)</span> <span class="p">{</span> <span class="k">return</span> <span class="n">r</span><span class="p">.</span><span class="n">getValue</span><span class="p">();</span> <span class="p">}</span>
+
+<span class="k">template</span> <span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">size_t</span> <span class="n">I</span><span class="p">&gt;</span>
+<span class="kt">int</span><span class="o">&amp;&amp;</span> <span class="n">get</span><span class="p">(</span><span class="n">Result</span><span class="o">&amp;&amp;</span> <span class="n">r</span><span class="p">)</span> <span class="p">{</span> <span class="k">return</span> <span class="n">std</span><span class="o">::</span><span class="n">move</span><span class="p">(</span><span class="n">r</span><span class="p">).</span><span class="n">getValue</span><span class="p">();</span> <span class="p">}</span>
+
+<span class="p">}</span>
+
+<span class="c1">// Required by the tuple protocol</span>
+<span class="k">template</span> <span class="o">&lt;</span><span class="p">&gt;</span>
+<span class="k">struct</span> <span class="nc">std</span><span class="o">::</span><span class="n">tuple_size</span><span class="o">&lt;</span><span class="n">mylib</span><span class="o">::</span><span class="n">Result</span><span class="o">&gt;</span> <span class="o">:</span> <span class="n">std</span><span class="o">::</span><span class="n">integral_constant</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">size_t</span><span class="p">,</span> <span class="mi">1u</span><span class="o">&gt;</span> <span class="p">{};</span>
+
+<span class="k">template</span> <span class="o">&lt;</span><span class="p">&gt;</span>
+<span class="k">struct</span> <span class="nc">std</span><span class="o">::</span><span class="n">tuple_element</span><span class="o">&lt;</span><span class="mi">0u</span><span class="p">,</span> <span class="n">mylib</span><span class="o">::</span><span class="n">Result</span><span class="o">&gt;</span>  <span class="p">{</span> <span class="k">using</span> <span class="n">type</span> <span class="o">=</span> <span class="kt">int</span><span class="p">;</span> <span class="p">};</span>
+
+
+
+
+<span class="c1">// lib.cppm</span>
+<span class="n">module</span><span class="p">;</span>
+
+<span class="cp">#include</span> <span class="cpf">"legacy.hpp"</span><span class="cp">
+#include</span> <span class="cpf">&lt;array&gt;</span><span class="cp">
+#include</span> <span class="cpf">&lt;tuple&gt;</span><span class="cp">
+</span>
+<span class="k">export</span> <span class="n">module</span> <span class="n">mylib</span><span class="p">;</span>
+
+<span class="k">export</span> <span class="k">namespace</span> <span class="n">mylib</span> <span class="p">{</span>
+
+<span class="c1">// I had expected that exporting Result would be enough</span>
+<span class="k">using</span> <span class="n">mylib</span><span class="o">::</span><span class="n">Result</span><span class="p">;</span>
+
+<span class="c1">// But you need these two lines for things to work</span>
+<span class="k">using</span> <span class="n">mylib</span><span class="o">::</span><span class="n">get</span><span class="p">;</span>
+<span class="kr">inline</span> <span class="kt">void</span> <span class="n">dont_discard_result</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">array</span><span class="o">&lt;</span><span class="kt">int</span><span class="p">,</span> <span class="n">std</span><span class="o">::</span><span class="n">tuple_size_v</span><span class="o">&lt;</span><span class="n">Result</span><span class="o">&gt;&gt;</span><span class="p">)</span> <span class="p">{}</span>
+
+<span class="p">}</span>
+
+
+
+<span class="c1">// main.cpp</span>
+<span class="n">import</span> <span class="n">mylib</span><span class="p">;</span>
+
+<span class="kt">int</span> <span class="nf">main</span><span class="p">()</span>
+<span class="p">{</span>
+    <span class="c1">// Works only with the two lines added in lib.cppm</span>
+    <span class="k">auto</span> <span class="p">[</span><span class="n">v</span><span class="p">]</span> <span class="o">=</span> <span class="n">mylib</span><span class="o">::</span><span class="n">Result</span><span class="p">{};</span>
+<span class="p">}</span></code></pre>
 </div>
 </div>
 <div class="paragraph">
-<p>This resembles the <code>pch</code> rule in B2. Under the hood, the function creates a library target that builds the corresponding Boost module. For instance:</p>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre class="highlightjs highlight"><code class="language-cmake hljs" data-lang="cmake">function (add_boost_asio_module NAME)
-    set(ROOT @CMAKE_INSTALL_PREFIX@)
-    add_library(${NAME})
-    target_include_directories(${NAME} PRIVATE ${ROOT}/include)
-    target_compile_features(${NAME} PUBLIC cxx_std_23)
-    target_sources(${NAME} PUBLIC
-        FILE_SET modules_public TYPE CXX_MODULES FILES
-            ${ROOT}/module/asio.cxx
-    )
-endfunction()</code></pre>
-</div>
+<p>The problem here is that neither <code>get</code> nor the <code>std::tuple_size</code>
+specialization seem to be decl-reachable from the module purview
+unless you add the two lines highlighted above.</p>
 </div>
 <div class="paragraph">
-<p>A function may be more appropriate than an actual target because the module may need to be built several times, with different flags and definitions.</p>
-</div>
-<div class="paragraph">
-<p>Such an approach requires non-trivial changes in either Boost.CMake or <code>boost_install</code>. Note that <code>vcpkg</code> users would not be able to access this, since <code>vcpkg</code> does not use the official Boost CMake modules. <code>conan</code> and system package managers would benefit.</p>
+<p>If you don&#8217;t add these lines, <strong>the module builds but main.cpp errors</strong>.
+This also shows that, when adding module support for a library,
+<strong>you need to run your entire test suite using import</strong>. Otherwise,
+chances are that you&#8217;re just shipping buggy code.</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_conclusion">Conclusion</h2>
+<h2 id="_references">References</h2>
 <div class="sectionbody">
-<div class="ulist">
-<ul>
+<div class="ulist bibliography">
+<ul class="bibliography">
 <li>
-<p>Modules are in a very early stage yet. We won&#8217;t get lots of production users with this.</p>
+<p><a id="clangd-modules"></a>[clangd-modules] Modules in clangd: <a href="https://chuanqixu9.github.io/c++/2025/12/03/Clangd-support-for-Modules.en.html" class="bare">https://chuanqixu9.github.io/c++/2025/12/03/Clangd-support-for-Modules.en.html</a></p>
 </li>
 <li>
-<p>A "module-only" Boost2 is probably not a good idea at this point.</p>
+<p><a id="p2581r2"></a>[p2581r2] Local preprocessor arguments: <a href="https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2581r2.pdf" class="bare">https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2581r2.pdf</a></p>
 </li>
 <li>
-<p>Modules may provide some compilation speed-up, but they&#8217;re not a panacea. Instantiation time isn&#8217;t affected by modules. You&#8217;re not wasting your time making your libraries less header-only.</p>
+<p><a id="cmake-header-units"></a>[cmake-header-units] <a href="https://gitlab.kitware.com/cmake/cmake/-/issues/25293" class="bare">https://gitlab.kitware.com/cmake/cmake/-/issues/25293</a></p>
 </li>
 <li>
-<p>Providing modular "bindings" for some Boost libraries may be interesting to gain some real-world experience from early adopters.</p>
+<p><a id="challenges-header-units"></a>[challenges-header-units] <a href="https://www.youtube.com/watch?v=_LGR0U5Opdg" class="bare">https://www.youtube.com/watch?v=_LGR0U5Opdg</a></p>
+</li>
+<li>
+<p><a id="p3041r0"></a>[p3041r0] <a href="https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p3041r0.pdf" class="bare">https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p3041r0.pdf</a></p>
 </li>
 </ul>
 </div>
@@ -774,12 +972,5 @@ endfunction()</code></pre>
 Last updated 2026-01-25 14:08:23 UTC
 </div>
 </div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.18.3/highlight.min.js"></script>
-<script>
-if (!hljs.initHighlighting.called) {
-  hljs.initHighlighting.called = true
-  ;[].slice.call(document.querySelectorAll('pre.highlight > code[data-lang]')).forEach(function (el) { hljs.highlightBlock(el) })
-}
-</script>
 </body>
 </html>
