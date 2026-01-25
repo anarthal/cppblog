@@ -1,0 +1,218 @@
+= C++20 modules: findings and thoughts
+:source-highlighter: rouge
+:toc: left
+:doctype: article
+Rubén Pérez (@anarthal)
+
+This page contains a set of concepts and interesting findings I've
+performed during my investigation about pass:[C++20] modules.
+
+Expect this page to change a lot over these days as I learn more!
+
+
+== IDE support
+
+Clangd-based IDEs like VSCode and CLion provide experimental support for pass:[C++20] modules. However, the tooling has notable limitations. Binary Module Interfaces (BMIs) are generated on demand, and the integration with build systems remains fragile. This means that while basic use cases will work, you may encounter issues in more complex scenarios. For a detailed discussion on the current state of clangd support, see this <<clangd-modules>>.
+
+== On dependency scanning
+
+The idea of dependency scanning is: given a set of translation units, find out:
+
+* What modules does each TU provide? There is no linking between file names and provided modules, so this step is required.
+* What modules and header units does each TU require?
+
+This information is required by build systems to build the dependency graph,
+and by tools like clangd, which require having available BMIs to do their task.
+This is what `clang-scan-deps` is for.
+
+The tricky part is that scanning requires a fully capable preprocessor,
+because you can have an import in an include, or guarded by an ifdef.
+
+== How to generate BMIs
+
+You may need to generate a BMI for a library that you didn't build,
+because BMI compatibility is stricter than ABI compatibility.
+For instance, TUs with different pass:[C++] standard level tend to
+mix well at the ABI-level, but BMIs with different pass:[C++] standard level
+are incompatible.
+
+For this reason, build systems should be able to generate BMIs for libraries
+built by other build systems. This is currently not the case, and requires
+adopting metadata formats that communicate enough information to achieve this.
+Currently under study by SG15.
+
+A key concept here is *local preprocessor arguments*: these are the arguments
+required to produce a BMI, but are not required to be consistent across other TUs.
+If our build system knew these, it can compute the command line to generate 
+a BMI like this:
+
+BMI command line = importer command line - importer local args + importee local args
+
+Example: `-DBOOST_ASIO_CONCURRENCY_HINT=1` would be a local preprocessor argument.
+
+*TBC: this is not functional as of today yet. When do we expect it?*
+
+== Header units
+
+They were supposed to make the transition to modules easier, but their implementability
+is in question. They're currently unsupported by CMake, and there seems
+to be no activity on the issue as of the time of writing <<cmake-header-units>>.
+
+They are currently supported by some compilers, but you need to use the command line.
+For example, with clang, if you specify a `-fmodule-file=iostream.pcm`, you can `import <iostream>;`.
+
+They are complex from a build system perspective: computing the dependency
+graph depends on the preprocessor state, but importing a header can modify preprocessor state.
+Build performance is yet to be known (see <<challenges-header-units>>).
+
+They might be implementable after agreeing on a metadata format that allows specifying
+which headers are importable, their local preprocessor arguments, and so on.
+
+== Include translation
+
+The standard allows certain includes to be automatically translated into imports.
+This is, `#include <iostream>` may be translated into `import <iostream>;`.
+Note that *this NEVER translates to `import std`*, as modules don't export macros,
+so this would break in the case of headers like `<cerrno>` or `<cassert>`.
+
+This is supported in:
+
+* clang: when including standard library headers in the GMF, and only
+  when BMIs for these headers are built and made available explicitly.
+* MSVC: this must be explicitly enabled with `/translateIncludes`,
+  and a MSVC-specific JSON file with metadata is required.
+
+All in all, this is currently neither clean nor transparent.
+
+P3041R0 proposes specifying to the compiler somehow that a header
+is subsumed by either a named module or another header.
+This would be a piece of metadata authored by the library author,
+who knows the specifics of a library. For instance:
+
+* `<iostream>` is fully subsumed by the `std` named module.
+* `<cerrno>` is subsumed by the `std` named module, plus some macro definitions.
+* `<boost/mp11.hpp>` is subsumed by the `boost.mp11` module,
+  plus a macro definition for its `BOOST_MP11_VERSION` macro.
+
+All in all, I think this is the transition we need.
+The library author is the person that has enough information to
+determine this translation.
+
+At the moment, I'm trying to emulate this in Boost headers
+with some macro machinery:
+
+[source,cpp]
+----
+// Replace the whole header content by an import if the user
+// is doing modules
+#if !defined(BOOST_XYZ_SOURCE) && defined(BOOST_USE_MODULES)
+import boost.xyz;
+#else
+
+// Regular header
+
+#endif
+----
+
+== export using and decl-reachability
+
+As you may know, modules introduce the concept of decl-reachability.
+The idea is that entities in the GMF are discarded by the compiler
+(and not included in the BMI) if they are not decl-reachable from
+the entities that are exported from the module.
+
+This usually translates into "entities introduced by headers that
+are not used within the module are discarded", which sounds logical.
+However, you might find surprises. I found this problem with a class 
+that implements the tuple protocol:
+
+[source,cpp]
+----
+// mylib.hpp
+#include <cstddef>
+#include <tuple>
+#include <type_traits>
+
+namespace mylib {
+  
+class Result {
+  int value_ {};
+public:
+  Result() = default;
+  int& getValue() & { return value_; }
+  const int& getValue() const& { return value_; }
+  int&& getValue() && { return std::move(value_); }
+};
+
+// Required by the tuple protocol
+template <std::size_t I>
+int& get(Result& r) { return r.getValue(); }
+
+template <std::size_t I>
+const int& get(const Result& r) { return r.getValue(); }
+
+template <std::size_t I>
+int&& get(Result&& r) { return std::move(r).getValue(); }
+
+}
+
+// Required by the tuple protocol
+template <>
+struct std::tuple_size<mylib::Result> : std::integral_constant<std::size_t, 1u> {};
+
+template <>
+struct std::tuple_element<0u, mylib::Result>  { using type = int; };
+
+
+
+
+// lib.cppm
+module;
+
+#include "legacy.hpp"
+#include <array>
+#include <tuple>
+
+export module mylib;
+
+export namespace mylib {
+
+// I had expected that exporting Result would be enough
+using mylib::Result;
+
+// But you need these two lines for things to work
+using mylib::get;
+inline void dont_discard_result(std::array<int, std::tuple_size_v<Result>>) {}
+
+}
+
+
+
+// main.cpp
+import mylib;
+
+int main()
+{
+    // Works only with the two lines added in lib.cppm
+    auto [v] = mylib::Result{};
+}
+----
+
+The problem here is that neither `get` nor the `std::tuple_size`
+specialization seem to be decl-reachable from the module purview
+unless you add the two lines highlighted above.
+
+If you don't add these lines, *the module builds but main.cpp errors*.
+This also shows that, when adding module support for a library,
+*you need to run your entire test suite using import*. Otherwise,
+chances are that you're just shipping buggy code.
+
+
+[bibliography]
+== References
+
+* [[[clangd-modules]]] Modules in clangd: https://chuanqixu9.github.io/c++/2025/12/03/Clangd-support-for-Modules.en.html
+* [[[p2581r2]]] Local preprocessor arguments: https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p2581r2.pdf
+* [[[cmake-header-units]]] https://gitlab.kitware.com/cmake/cmake/-/issues/25293
+* [[[challenges-header-units]]] https://www.youtube.com/watch?v=_LGR0U5Opdg
+* [[[p3041r0]]] https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p3041r0.pdf
