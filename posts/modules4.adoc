@@ -1,4 +1,4 @@
-= C++20 modules: findings and thoughts
+= pass:[C++20] modules: findings and thoughts
 :source-highlighter: rouge
 :toc: left
 :doctype: article
@@ -212,7 +212,7 @@ is the only robust way of modularizing a library.
 
 == Modules and the ODR
 
-We all know what the ODR means in C++: an entity can only have a single
+We all know what the ODR means in pass:[C++]: an entity can only have a single
 definition. Entities like inline functions might have multiple definitions across TUs,
 as long as they are the same. The problem with this rule is that the standard doesn't mandate
 a diagnostic if you violate it, ending up in difficult to diagnose bugs.
