@@ -5,14 +5,14 @@
 Rubén Pérez (@anarthal)
 
 This page contains a set of concepts and interesting findings I've
-performed during my investigation about pass:[C++20] modules.
+discovered during my investigation about pass:[C++20] modules.
 
 Expect this page to change a lot over these days as I learn more!
 
 
 == IDE support
 
-Clangd-based IDEs like VSCode and CLion provide experimental support for pass:[C++20] modules. However, the tooling has notable limitations. Binary Module Interfaces (BMIs) are generated on demand, and the integration with build systems remains fragile. This means that while basic use cases will work, you may encounter issues in more complex scenarios. For a detailed discussion on the current state of clangd support, see this <<clangd-modules>>.
+Clangd-based IDEs like VSCode and CLion provide experimental support for pass:[C++20] modules. However, the tooling has notable limitations. Binary Module Interfaces (BMIs) are generated on demand, and the integration with build systems remains fragile. This means that while basic use cases will work, you may encounter issues in more complex scenarios. For a detailed discussion on the current state of clangd support, see <<clangd-modules>>.
 
 == On dependency scanning
 
@@ -43,7 +43,7 @@ Currently under study by SG15.
 
 A key concept here is *local preprocessor arguments*: these are the arguments
 required to produce a BMI, but are not required to be consistent across other TUs.
-If our build system knew these, it can compute the command line to generate 
+If our build system knew these, it could compute the command line to generate
 a BMI like this:
 
 BMI command line = importer command line - importer local args + importee local args
@@ -71,7 +71,7 @@ which headers are importable, their local preprocessor arguments, and so on.
 == Include translation
 
 The standard allows certain includes to be automatically translated into imports.
-This is, `#include <iostream>` may be translated into `import <iostream>;`.
+That is, `#include <iostream>` may be translated into `import <iostream>;`.
 Note that *this NEVER translates to `import std`*, as modules don't export macros,
 so this would break in the case of headers like `<cerrno>` or `<cassert>`.
 
@@ -169,7 +169,7 @@ struct std::tuple_element<0u, mylib::Result>  { using type = int; };
 // lib.cppm
 module;
 
-#include "legacy.hpp"
+#include "mylib.hpp"
 #include <array>
 #include <tuple>
 
@@ -207,7 +207,7 @@ This also shows that, when adding module support for a library,
 *you need to run your entire test suite using import*. Otherwise,
 chances are that you're just shipping buggy code.
 
-All in all, I'm leaning towards thinking that the (ABI-breaking style)[https://clang.llvm.org/docs/StandardCPlusPlusModules.html#id43]
+All in all, I'm leaning towards thinking that the https://clang.llvm.org/docs/StandardCPlusPlusModules.html#id43[ABI-breaking style]
 is the only robust way of modularizing a library.
 
 == Modules and the ODR
@@ -215,7 +215,7 @@ is the only robust way of modularizing a library.
 We all know what the ODR means in pass:[C++]: an entity can only have a single
 definition. Entities like inline functions might have multiple definitions across TUs,
 as long as they are the same. The problem with this rule is that the standard doesn't mandate
-a diagnostic if you violate it, ending up in difficult to diagnose bugs.
+a diagnostic if you violate it, resulting in difficult-to-diagnose bugs.
 
 The main way modules help here is by not performing textual include anymore
 (structural ODR safety). They help in more ways, too, but we need to introduce some concepts first.
@@ -225,9 +225,9 @@ The _global module_ is where entities that don't belong anywhere else
 are attached (e.g. think of entities poured into the GMF by including `<Windows.h>`).
 
 Entities attached to a named module can only have a single definition
-in a single TU. This applies for all entities, including things
+in a single TU. This applies to all entities, including things
 like inline functions. The compiler is required to diagnose when we break this
-rule if we end up making the definitions reachable to each other (i.e. importing them into a common file).
+rule if we end up making the definitions reachable to each other (i.e., importing them into a common file).
 Not perfect, but much better than what we had before:
 
 [source,cpp]
