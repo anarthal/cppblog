@@ -230,7 +230,8 @@ like inline functions. The compiler is required to diagnose when we break this
 rule if we end up making the definitions reachable to each other (i.e. importing them into a common file).
 Not perfect, but much better than what we had before:
 
-```cpp
+[source,cpp]
+----
 // mylib.h
 inline int f() {
   #ifdef NDEBUG
@@ -247,7 +248,7 @@ export module mylib;
 // other.cpp (compiled without -DNDEBUG)
 import mylib;      // OK
 #include "mylib.h" // ODR violation, diagnosed
-```
+----
 
 Attachment works roughly like this:
 
@@ -281,12 +282,13 @@ which were the two possibilities.
 This is problematic for unit tests that need to cover library implementation
 details. For instance:
 
-```cpp
+[source,cpp]
+----
 // mylib.cppm
 export module mylib;
 int f_impl() { return 42; } // not exported
 export int f() { return f_impl(); }
-```
+----
 
 If we want to test `f_impl`, we need to make the unit test
 part of module `mylib`. But `main` can't be part of module `mylib`,
@@ -305,7 +307,8 @@ As you know, modules don't export macros, so if you need any macros,
 you need to include the relevant header. This is a list of headers
 that bring macros in:
 
-```cpp
+[source,cpp]
+----
 #include <cassert>      // assert
 #include <cerrno>       // errno, all E* errno macros
 #include <cstddef>      // NULL, offsetof
@@ -320,7 +323,7 @@ that bring macros in:
 #include <csetjmp>      // setjmp (and any other C macros from <setjmp.h>)
 #include <ctime>        // time/clocks macros (same as C)
 #include <clocale>      // LC_* and other C locale macros
-```
+----
 
 The standard dictates that users are free to mix `import std`
 with standard includes, and this should work. The reality is
@@ -329,15 +332,17 @@ that most implementations break when doing this.
 Including first and then importing usually works fine,
 but the other way around causes trouble:
 
-```cpp
+[source,cpp]
+----
 import std;
 #include <cmath> // causes redefinition errors in gcc-15 and clang-22
-```
+----
 
 These errors happen even if the include happens in a different
 TU, as long as one TU is reachable from the other:
 
-```cpp
+[source,cpp]
+----
 // mylib.cppm
 module;
 #include <cmath>
@@ -347,7 +352,7 @@ export module mylib;
 // main.cpp
 import std;
 import mylib; // error! we've made mylib.cppm reachable from main.cpp, and it contains an include
-```
+----
 
 This currently poses a lot of problems, which is unfortunate, since
 the compile time benefits that `import std` provides are massive.
