@@ -207,6 +207,156 @@ This also shows that, when adding module support for a library,
 *you need to run your entire test suite using import*. Otherwise,
 chances are that you're just shipping buggy code.
 
+All in all, I'm leaning towards thinking that the (ABI-breaking style)[https://clang.llvm.org/docs/StandardCPlusPlusModules.html#id43]
+is the only robust way of modularizing a library.
+
+== Modules and the ODR
+
+We all know what the ODR means in C++: an entity can only have a single
+definition. Entities like inline functions might have multiple definitions across TUs,
+as long as they are the same. The problem with this rule is that the standard doesn't mandate
+a diagnostic if you violate it, ending up in difficult to diagnose bugs.
+
+The main way modules help here is by not performing textual include anymore
+(structural ODR safety). They help in more ways, too, but we need to introduce some concepts first.
+
+In the modules world, every entity is _attached_ to exactly one module.
+The _global module_ is where entities that don't belong anywhere else
+are attached (e.g. think of entities poured into the GMF by including `<Windows.h>`).
+
+Entities attached to a named module can only have a single definition
+in a single TU. This applies for all entities, including things
+like inline functions. The compiler is required to diagnose when we break this
+rule if we end up making the definitions reachable to each other (i.e. importing them into a common file).
+Not perfect, but much better than what we had before:
+
+```cpp
+// mylib.h
+inline int f() {
+  #ifdef NDEBUG
+  return 42;
+  #else
+  return 10;
+  #endif
+}
+
+// mylib.cppm (compiled with -DNDEBUG)
+export module mylib;
+#include "mylib.h" // f becomes attached to module mylib
+
+// other.cpp (compiled without -DNDEBUG)
+import mylib;      // OK
+#include "mylib.h" // ODR violation, diagnosed
+```
+
+Attachment works roughly like this:
+
+* Declared in the GMF: attached to the global module.
+* Declared in a TU that is not a module: attached to the global module.
+* Declared in an `extern "C++"` block: attached to the global module.
+* Declared in the purview of a named module: attached to that module.
+
+The ABI-breaking style attaches entities to modules,
+while `export using` doesn't (uses the global module).
+
+== Module linkage
+
+Module linkage is a new type of linkage. If "internal linkage"
+means "TU local", module linkage means "module local".
+The rule is (<<basic.link-4.10>>): if an entity is attached to
+a named module and not exported, it has module linkage.
+
+So module linkage per se doesn't have any implications regarding
+how modules help with ODR violations. It is an implication of module attachment.
+Note that entities with module linkage are mangled differently than
+other entities.
+
+== main in a module
+
+At the time of writing, `main` can't be placed in a module.
+<<basic.start.main>> explicitly forbids attaching main
+to any named module and enclosing it in an `extern "C++"` block,
+which were the two possibilities.
+
+This is problematic for unit tests that need to cover library implementation
+details. For instance:
+
+```cpp
+// mylib.cppm
+export module mylib;
+int f_impl() { return 42; } // not exported
+export int f() { return f_impl(); }
+```
+
+If we want to test `f_impl`, we need to make the unit test
+part of module `mylib`. But `main` can't be part of module `mylib`,
+so a workaround is needed. More on this next week.
+
+<<P3618R0>> proposes lifting the restriction regarding the linkage block,
+which would solve the problem. The paper seems to have made progress,
+but isn't in the standard draft yet.
+
+== The std module
+
+Simple: `import std` brings the entire standard library in.
+`std.compat` brings names like `printf` into the global scope.
+
+As you know, modules don't export macros, so if you need any macros,
+you need to include the relevant header. This is a list of headers
+that bring macros in:
+
+```cpp
+#include <cassert>      // assert
+#include <cerrno>       // errno, all E* errno macros
+#include <cstddef>      // NULL, offsetof
+#include <cstdarg>      // va_arg, va_copy, va_end, va_start
+#include <cmath>        // HUGE_VAL*, INFINITY, NAN, FP_*, MATH_*, math_errhandling
+#include <version>      // __cplusplus, __cpp_lib_*, __cpp_*, etc.
+#include <climits>      // integer limit macros (same as C)
+#include <cfloat>       // floating-point limit/characteristic macros (same as C)
+#include <cstdint>      // fixed-width limit and optional format macros (same as C)
+#include <cinttypes>    // format/scan macros (same as C)
+#include <csignal>      // SIG_* macros (same as C)
+#include <csetjmp>      // setjmp (and any other C macros from <setjmp.h>)
+#include <ctime>        // time/clocks macros (same as C)
+#include <clocale>      // LC_* and other C locale macros
+```
+
+The standard dictates that users are free to mix `import std`
+with standard includes, and this should work. The reality is
+that most implementations break when doing this.
+
+Including first and then importing usually works fine,
+but the other way around causes trouble:
+
+```cpp
+import std;
+#include <cmath> // causes redefinition errors in gcc-15 and clang-22
+```
+
+These errors happen even if the include happens in a different
+TU, as long as one TU is reachable from the other:
+
+```cpp
+// mylib.cppm
+module;
+#include <cmath>
+
+export module mylib;
+
+// main.cpp
+import std;
+import mylib; // error! we've made mylib.cppm reachable from main.cpp, and it contains an include
+```
+
+This currently poses a lot of problems, which is unfortunate, since
+the compile time benefits that `import std` provides are massive.
+My current view is that there are two possibilities here:
+
+* Ifdef-out standard headers when a library is being consumed as a named module,
+  and mandate `import std` everywhere.
+* Find a way of making the approach in <<p3041r0>> work.
+
 
 [bibliography]
 == References
@@ -216,3 +366,6 @@ chances are that you're just shipping buggy code.
 * [[[cmake-header-units]]] https://gitlab.kitware.com/cmake/cmake/-/issues/25293
 * [[[challenges-header-units]]] https://www.youtube.com/watch?v=_LGR0U5Opdg
 * [[[p3041r0]]] https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p3041r0.pdf
+* [[[basic.link-4.10]]] https://eel.is/c++draft/basic.link#8.3
+* [[[basic.start.main]]] https://eel.is/c++draft/basic.start.main
+* [[[P3618R0]]] https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3618r0.html
