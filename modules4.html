@@ -664,6 +664,10 @@ pre.rouge {
 <li><a href="#_header_units">Header units</a></li>
 <li><a href="#_include_translation">Include translation</a></li>
 <li><a href="#_export_using_and_decl_reachability">export using and decl-reachability</a></li>
+<li><a href="#_modules_and_the_odr">Modules and the ODR</a></li>
+<li><a href="#_module_linkage">Module linkage</a></li>
+<li><a href="#_main_in_a_module">main in a module</a></li>
+<li><a href="#_the_std_module">The std module</a></li>
 <li><a href="#_references">References</a></li>
 </ul>
 </div>
@@ -673,7 +677,7 @@ pre.rouge {
 <div class="sectionbody">
 <div class="paragraph">
 <p>This page contains a set of concepts and interesting findings I&#8217;ve
-performed during my investigation about C++20 modules.</p>
+discovered during my investigation about C++20 modules.</p>
 </div>
 <div class="paragraph">
 <p>Expect this page to change a lot over these days as I learn more!</p>
@@ -684,7 +688,7 @@ performed during my investigation about C++20 modules.</p>
 <h2 id="_ide_support">IDE support</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>Clangd-based IDEs like VSCode and CLion provide experimental support for C++20 modules. However, the tooling has notable limitations. Binary Module Interfaces (BMIs) are generated on demand, and the integration with build systems remains fragile. This means that while basic use cases will work, you may encounter issues in more complex scenarios. For a detailed discussion on the current state of clangd support, see this <a href="#clangd-modules">[clangd-modules]</a>.</p>
+<p>Clangd-based IDEs like VSCode and CLion provide experimental support for C++20 modules. However, the tooling has notable limitations. Binary Module Interfaces (BMIs) are generated on demand, and the integration with build systems remains fragile. This means that while basic use cases will work, you may encounter issues in more complex scenarios. For a detailed discussion on the current state of clangd support, see <a href="#clangd-modules">[clangd-modules]</a>.</p>
 </div>
 </div>
 </div>
@@ -734,7 +738,7 @@ Currently under study by SG15.</p>
 <div class="paragraph">
 <p>A key concept here is <strong>local preprocessor arguments</strong>: these are the arguments
 required to produce a BMI, but are not required to be consistent across other TUs.
-If our build system knew these, it can compute the command line to generate
+If our build system knew these, it could compute the command line to generate
 a BMI like this:</p>
 </div>
 <div class="paragraph">
@@ -776,7 +780,7 @@ which headers are importable, their local preprocessor arguments, and so on.</p>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The standard allows certain includes to be automatically translated into imports.
-This is, <code>#include &lt;iostream&gt;</code> may be translated into <code>import &lt;iostream&gt;;</code>.
+That is, <code>#include &lt;iostream&gt;</code> may be translated into <code>import &lt;iostream&gt;;</code>.
 Note that <strong>this NEVER translates to <code>import std</code></strong>, as modules don&#8217;t export macros,
 so this would break in the case of headers like <code>&lt;cerrno&gt;</code> or <code>&lt;cassert&gt;</code>.</p>
 </div>
@@ -900,7 +904,7 @@ that implements the tuple protocol:</p>
 <span class="c1">// lib.cppm</span>
 <span class="n">module</span><span class="p">;</span>
 
-<span class="cp">#include</span> <span class="cpf">"legacy.hpp"</span><span class="cp">
+<span class="cp">#include</span> <span class="cpf">"mylib.hpp"</span><span class="cp">
 #include</span> <span class="cpf">&lt;array&gt;</span><span class="cp">
 #include</span> <span class="cpf">&lt;tuple&gt;</span><span class="cp">
 </span>
@@ -940,6 +944,210 @@ This also shows that, when adding module support for a library,
 <strong>you need to run your entire test suite using import</strong>. Otherwise,
 chances are that you&#8217;re just shipping buggy code.</p>
 </div>
+<div class="paragraph">
+<p>All in all, I&#8217;m leaning towards thinking that the <a href="https://clang.llvm.org/docs/StandardCPlusPlusModules.html#id43">ABI-breaking style</a>
+is the only robust way of modularizing a library.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_modules_and_the_odr">Modules and the ODR</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>We all know what the ODR means in C++: an entity can only have a single
+definition. Entities like inline functions might have multiple definitions across TUs,
+as long as they are the same. The problem with this rule is that the standard doesn&#8217;t mandate
+a diagnostic if you violate it, resulting in difficult-to-diagnose bugs.</p>
+</div>
+<div class="paragraph">
+<p>The main way modules help here is by not performing textual include anymore
+(structural ODR safety). They help in more ways, too, but we need to introduce some concepts first.</p>
+</div>
+<div class="paragraph">
+<p>In the modules world, every entity is <em>attached</em> to exactly one module.
+The <em>global module</em> is where entities that don&#8217;t belong anywhere else
+are attached (e.g. think of entities poured into the GMF by including <code>&lt;Windows.h&gt;</code>).</p>
+</div>
+<div class="paragraph">
+<p>Entities attached to a named module can only have a single definition
+in a single TU. This applies to all entities, including things
+like inline functions. The compiler is required to diagnose when we break this
+rule if we end up making the definitions reachable to each other (i.e., importing them into a common file).
+Not perfect, but much better than what we had before:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="rouge highlight"><code data-lang="cpp"><span class="c1">// mylib.h</span>
+<span class="kr">inline</span> <span class="kt">int</span> <span class="nf">f</span><span class="p">()</span> <span class="p">{</span>
+  <span class="cp">#ifdef NDEBUG
+</span>  <span class="k">return</span> <span class="mi">42</span><span class="p">;</span>
+  <span class="cp">#else
+</span>  <span class="k">return</span> <span class="mi">10</span><span class="p">;</span>
+  <span class="cp">#endif
+</span><span class="p">}</span>
+
+<span class="c1">// mylib.cppm (compiled with -DNDEBUG)</span>
+<span class="k">export</span> <span class="n">module</span> <span class="n">mylib</span><span class="p">;</span>
+<span class="cp">#include</span> <span class="cpf">"mylib.h"</span><span class="c1"> // f becomes attached to module mylib</span><span class="cp">
+</span>
+<span class="c1">// other.cpp (compiled without -DNDEBUG)</span>
+<span class="n">import</span> <span class="n">mylib</span><span class="p">;</span>      <span class="c1">// OK</span>
+<span class="cp">#include</span> <span class="cpf">"mylib.h"</span><span class="c1"> // ODR violation, diagnosed</span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Attachment works roughly like this:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Declared in the GMF: attached to the global module.</p>
+</li>
+<li>
+<p>Declared in a TU that is not a module: attached to the global module.</p>
+</li>
+<li>
+<p>Declared in an <code>extern "C++"</code> block: attached to the global module.</p>
+</li>
+<li>
+<p>Declared in the purview of a named module: attached to that module.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The ABI-breaking style attaches entities to modules,
+while <code>export using</code> doesn&#8217;t (uses the global module).</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_module_linkage">Module linkage</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Module linkage is a new type of linkage. If "internal linkage"
+means "TU local", module linkage means "module local".
+The rule is (<a href="#basic.link-4.10">[basic.link-4.10]</a>): if an entity is attached to
+a named module and not exported, it has module linkage.</p>
+</div>
+<div class="paragraph">
+<p>So module linkage per se doesn&#8217;t have any implications regarding
+how modules help with ODR violations. It is an implication of module attachment.
+Note that entities with module linkage are mangled differently than
+other entities.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_main_in_a_module">main in a module</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>At the time of writing, <code>main</code> can&#8217;t be placed in a module.
+<a href="#basic.start.main">[basic.start.main]</a> explicitly forbids attaching main
+to any named module and enclosing it in an <code>extern "C++"</code> block,
+which were the two possibilities.</p>
+</div>
+<div class="paragraph">
+<p>This is problematic for unit tests that need to cover library implementation
+details. For instance:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="rouge highlight"><code data-lang="cpp"><span class="c1">// mylib.cppm</span>
+<span class="k">export</span> <span class="n">module</span> <span class="n">mylib</span><span class="p">;</span>
+<span class="kt">int</span> <span class="nf">f_impl</span><span class="p">()</span> <span class="p">{</span> <span class="k">return</span> <span class="mi">42</span><span class="p">;</span> <span class="p">}</span> <span class="c1">// not exported</span>
+<span class="k">export</span> <span class="kt">int</span> <span class="nf">f</span><span class="p">()</span> <span class="p">{</span> <span class="k">return</span> <span class="n">f_impl</span><span class="p">();</span> <span class="p">}</span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If we want to test <code>f_impl</code>, we need to make the unit test
+part of module <code>mylib</code>. But <code>main</code> can&#8217;t be part of module <code>mylib</code>,
+so a workaround is needed. More on this next week.</p>
+</div>
+<div class="paragraph">
+<p><a href="#P3618R0">[P3618R0]</a> proposes lifting the restriction regarding the linkage block,
+which would solve the problem. The paper seems to have made progress,
+but isn&#8217;t in the standard draft yet.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_the_std_module">The std module</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Simple: <code>import std</code> brings the entire standard library in.
+<code>std.compat</code> brings names like <code>printf</code> into the global scope.</p>
+</div>
+<div class="paragraph">
+<p>As you know, modules don&#8217;t export macros, so if you need any macros,
+you need to include the relevant header. This is a list of headers
+that bring macros in:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="rouge highlight"><code data-lang="cpp"><span class="cp">#include</span> <span class="cpf">&lt;cassert&gt;</span><span class="c1">      // assert</span><span class="cp">
+#include</span> <span class="cpf">&lt;cerrno&gt;</span><span class="c1">       // errno, all E* errno macros</span><span class="cp">
+#include</span> <span class="cpf">&lt;cstddef&gt;</span><span class="c1">      // NULL, offsetof</span><span class="cp">
+#include</span> <span class="cpf">&lt;cstdarg&gt;</span><span class="c1">      // va_arg, va_copy, va_end, va_start</span><span class="cp">
+#include</span> <span class="cpf">&lt;cmath&gt;</span><span class="c1">        // HUGE_VAL*, INFINITY, NAN, FP_*, MATH_*, math_errhandling</span><span class="cp">
+#include</span> <span class="cpf">&lt;version&gt;</span><span class="c1">      // __cplusplus, __cpp_lib_*, __cpp_*, etc.</span><span class="cp">
+#include</span> <span class="cpf">&lt;climits&gt;</span><span class="c1">      // integer limit macros (same as C)</span><span class="cp">
+#include</span> <span class="cpf">&lt;cfloat&gt;</span><span class="c1">       // floating-point limit/characteristic macros (same as C)</span><span class="cp">
+#include</span> <span class="cpf">&lt;cstdint&gt;</span><span class="c1">      // fixed-width limit and optional format macros (same as C)</span><span class="cp">
+#include</span> <span class="cpf">&lt;cinttypes&gt;</span><span class="c1">    // format/scan macros (same as C)</span><span class="cp">
+#include</span> <span class="cpf">&lt;csignal&gt;</span><span class="c1">      // SIG_* macros (same as C)</span><span class="cp">
+#include</span> <span class="cpf">&lt;csetjmp&gt;</span><span class="c1">      // setjmp (and any other C macros from &lt;setjmp.h&gt;)</span><span class="cp">
+#include</span> <span class="cpf">&lt;ctime&gt;</span><span class="c1">        // time/clocks macros (same as C)</span><span class="cp">
+#include</span> <span class="cpf">&lt;clocale&gt;</span><span class="c1">      // LC_* and other C locale macros</span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The standard dictates that users are free to mix <code>import std</code>
+with standard includes, and this should work. The reality is
+that most implementations break when doing this.</p>
+</div>
+<div class="paragraph">
+<p>Including first and then importing usually works fine,
+but the other way around causes trouble:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="rouge highlight"><code data-lang="cpp"><span class="n">import</span> <span class="n">std</span><span class="p">;</span>
+<span class="cp">#include</span> <span class="cpf">&lt;cmath&gt;</span><span class="c1"> // causes redefinition errors in gcc-15 and clang-22</span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>These errors happen even if the include happens in a different
+TU, as long as one TU is reachable from the other:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="rouge highlight"><code data-lang="cpp"><span class="c1">// mylib.cppm</span>
+<span class="n">module</span><span class="p">;</span>
+<span class="cp">#include</span> <span class="cpf">&lt;cmath&gt;</span><span class="cp">
+</span>
+<span class="k">export</span> <span class="n">module</span> <span class="n">mylib</span><span class="p">;</span>
+
+<span class="c1">// main.cpp</span>
+<span class="n">import</span> <span class="n">std</span><span class="p">;</span>
+<span class="n">import</span> <span class="n">mylib</span><span class="p">;</span> <span class="c1">// error! we've made mylib.cppm reachable from main.cpp, and it contains an include</span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This currently poses a lot of problems, which is unfortunate, since
+the compile time benefits that <code>import std</code> provides are massive.
+My current view is that there are two possibilities here:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Ifdef-out standard headers when a library is being consumed as a named module,
+and mandate <code>import std</code> everywhere.</p>
+</li>
+<li>
+<p>Find a way of making the approach in <a href="#p3041r0">[p3041r0]</a> work.</p>
+</li>
+</ul>
+</div>
 </div>
 </div>
 <div class="sect1">
@@ -962,6 +1170,15 @@ chances are that you&#8217;re just shipping buggy code.</p>
 <li>
 <p><a id="p3041r0"></a>[p3041r0] <a href="https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p3041r0.pdf" class="bare">https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2023/p3041r0.pdf</a></p>
 </li>
+<li>
+<p><a id="basic.link-4.10"></a>[basic.link-4.10] <a href="https://eel.is/c++draft/basic.link#8.3" class="bare">https://eel.is/c++draft/basic.link#8.3</a></p>
+</li>
+<li>
+<p><a id="basic.start.main"></a>[basic.start.main] <a href="https://eel.is/c++draft/basic.start.main" class="bare">https://eel.is/c++draft/basic.start.main</a></p>
+</li>
+<li>
+<p><a id="P3618R0"></a>[P3618R0] <a href="https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3618r0.html" class="bare">https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3618r0.html</a></p>
+</li>
 </ul>
 </div>
 </div>
@@ -969,7 +1186,7 @@ chances are that you&#8217;re just shipping buggy code.</p>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2026-01-25 14:08:23 UTC
+Last updated 2026-01-30 22:40:48 UTC
 </div>
 </div>
 </body>
